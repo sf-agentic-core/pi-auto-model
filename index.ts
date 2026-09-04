@@ -51,6 +51,11 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+/** True when this extension is running inside an explicitly launched subagent. */
+export function isSubagentProcess(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.PI_SUBAGENT_CHILD === "1" || env.PI_SUBAGENT_CHILD === "true" || !!env.PI_SUBAGENT_CHILD_AGENT;
+}
+
 // ---------------------------------------------------------------------------
 // Tipos de configuración
 // ---------------------------------------------------------------------------
@@ -1030,6 +1035,7 @@ interface LastDecision {
 // ---------------------------------------------------------------------------
 
 export const __test = {
+  isSubagentProcess,
   TIER_ORDER,
   DEFAULT_CONFIG,
   computeSignals,
@@ -1369,6 +1375,7 @@ export default function (pi: ExtensionAPI) {
   // input — maneja prefijos !! (bypass) y @@tier (fuerza nivel)
   // -------------------------------------------------------------------------
   pi.on("input", async (event: InputEvent, _ctx) => {
+    if (isSubagentProcess()) return { action: "continue" as const };
     if (event.source === "extension") return { action: "continue" as const };
     if (!enabled) return { action: "continue" as const };
     // Nuevo input de usuario real → presupuesto de rescate renovado
@@ -1402,6 +1409,7 @@ export default function (pi: ExtensionAPI) {
   // before_agent_start — clasifica y cambia de modelo si procede
   // -------------------------------------------------------------------------
   pi.on("before_agent_start", async (event: BeforeAgentStartEvent, ctx) => {
+    if (isSubagentProcess()) return;
     if (!enabled) return;
     // Por defecto sin rescate (pin/bypass/sin decisión); el routing lo desbloquea
     lastTurnLocked = true;
@@ -1622,6 +1630,7 @@ export default function (pi: ExtensionAPI) {
   // session_start — estado inicial
   // -------------------------------------------------------------------------
   pi.on("session_start", (_event, ctx) => {
+    if (isSubagentProcess()) return;
     lastCwd = ctx.cwd;
     cfg = loadConfig(ctx.isProjectTrusted() ? ctx.cwd : undefined);
     enabled = cfg.enabled;
