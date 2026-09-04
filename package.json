@@ -1,0 +1,26 @@
+{
+  "name": "pi-auto-mode",
+  "version": "0.1.0",
+  "description": "Standalone automatic model routing extension for pi",
+  "type": "module",
+  "main": "index.ts",
+  "files": [
+    "index.ts",
+    "README.md",
+    "config.example.json",
+    "eval-corpus.json",
+    "eval-score.mjs",
+    "score-smoke.mjs"
+  ],
+  "scripts": {
+    "test:smoke": "node --experimental-strip-types score-smoke.mjs",
+    "test:eval": "node --experimental-strip-types eval-score.mjs"
+  },
+  "keywords": [
+    "pi",
+    "agent",
+    "model-routing",
+    "auto-mode"
+  ],
+  "license": "MIT"
+}
