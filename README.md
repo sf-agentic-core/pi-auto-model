@@ -328,3 +328,39 @@ directorio. La configuración se recarga en `session_start` y con `/auto-model r
 La extensión vive en `core-agent-library/extensions/auto-model-router/` y se
 despliega como symlink a `~/.pi/agent/extensions/` mediante
 `scripts/setup.sh` (deploy automático de extensiones gestionadas).
+
+## Releases automatizadas (Release Please)
+
+Los releases se gestionan automáticamente con
+[Release Please](https://github.com/googleapis/release-please) mediante el
+workflow `.github/workflows/release.yml`. Al hacer push a `main`, Release
+Please analiza los commits y:
+
+- Abre (o actualiza) un **PR de release** con el bump de versión en
+  `package.json` y `.release-please-manifest.json`, un `CHANGELOG.md`
+  generado y las notas del release. También abre PRs separados para
+  dependencias si existen (`chore(deps)`).
+- Al **mergear el PR de release**, crea el tag `vX.Y.Z` y el **GitHub
+  Release** correspondiente.
+
+Para que esto funcione, los commits en `main` deben seguir
+[Conventional Commits](https://www.conventionalcommits.org/) (el repositorio
+usa merge/squash de PRs):
+
+| Tipo de commit        | Efecto en la versión                     |
+|-----------------------|------------------------------------------|
+| `feat: ...`           | bump **minor** (`0.1.0` → `0.2.0`)       |
+| `fix: ...`            | bump **patch** (`0.1.0` → `0.1.1`)       |
+| `feat!:` / `BREAKING CHANGE` | bump **major** (`0.1.0` → `1.0.0`) |
+| `chore:`, `docs:`, `refactor:`, `test:`, etc. | sin release |
+
+Reglas prácticas:
+
+- El asunto del commit debe tener el formato `tipo(alcance): descripción`
+  (p. ej. `feat(scoring): añade señal de output`).
+- Para un cambio que rompe compatibilidad, añade `!` tras el tipo o un pie
+  con `BREAKING CHANGE: descripción`.
+- Prefiere **squash merge** para que el PR de release vea un único commit
+  con el tipo correcto.
+- El PR de release es de Release Please: no lo edites a mano; solo
+  revísalo y mergealo.
