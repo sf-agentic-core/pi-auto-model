@@ -6,11 +6,31 @@ import { __test } from "./index.ts";
 const {
   TIER_ORDER,
   DEFAULT_CONFIG,
+  isSubagentProcess,
   computeSignals,
   weightedScore,
   resolveTier,
   pickModel,
 } = __test;
+
+let pass = 0;
+let fail = 0;
+
+// --- Test 0: bypass en procesos subagent -----------------------------------
+{
+  const cases = [
+    [{}, false],
+    [{ PI_SUBAGENT_CHILD: "1" }, true],
+    [{ PI_SUBAGENT_CHILD: "true" }, true],
+    [{ PI_SUBAGENT_CHILD_AGENT: "child-agent-id" }, true],
+    [{ PI_SUBAGENT_CHILD: "0" }, false],
+    [{ PI_SUBAGENT_CHILD: "false" }, false],
+    [{ PI_SUBAGENT_CHILD_AGENT: "" }, false],
+  ];
+  const ok = cases.every(([env, expected]) => isSubagentProcess(env) === expected);
+  ok ? pass++ : fail++;
+  console.log(`${ok ? "✅" : "❌"} isSubagentProcess: child flags bypass; unset/false flags do not`);
+}
 
 const ctxStub = {
   model: undefined,
@@ -88,8 +108,6 @@ const cases = [
   },
 ];
 
-let pass = 0;
-let fail = 0;
 for (const c of cases) {
   const signals = computeSignals(c.prompt, 0, undefined, ["read", "bash", "edit", "write"], 0, 0);
   const score = weightedScore(signals, DEFAULT_CONFIG.scoring.weights);
