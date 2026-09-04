@@ -1,0 +1,85 @@
+{
+  "enabled": true,
+  "providers": {
+    "github-copilot": { "enabled": true, "priority": 1 },
+    "deepseek": { "enabled": true, "priority": 2 },
+    "google": { "enabled": true, "priority": 3 },
+    "anthropic": { "enabled": true, "priority": 4 }
+  },
+  "tiers": {
+    "sota+": [
+      { "provider": "github-copilot", "model": "gpt-5.6-sol", "thinking": "max" },
+      { "provider": "anthropic", "model": "claude-fable-5", "thinking": "max" },
+      { "provider": "google", "model": "gemini-3.1-pro-preview", "thinking": "xhigh" },
+      { "provider": "deepseek", "model": "deepseek-v4-pro", "thinking": "high" }
+    ],
+    "sota": [
+      { "provider": "github-copilot", "model": "gpt-5.6-terra", "thinking": "high" },
+      { "provider": "anthropic", "model": "claude-opus-4-8", "thinking": "high" },
+      { "provider": "google", "model": "gemini-3-pro-preview", "thinking": "high" },
+      { "provider": "deepseek", "model": "deepseek-v4-pro", "thinking": "high" }
+    ],
+    "workhorses+": [
+      { "provider": "github-copilot", "model": "gpt-5.3-codex", "thinking": "medium" },
+      { "provider": "deepseek", "model": "deepseek-v4-pro", "thinking": "high" },
+      { "provider": "google", "model": "gemini-3.5-flash", "thinking": "medium" },
+      { "provider": "anthropic", "model": "claude-sonnet-4-6", "thinking": "high" }
+    ],
+    "workhorses": [
+      { "provider": "github-copilot", "model": "gpt-5.6-luna", "thinking": "medium" },
+      { "provider": "deepseek", "model": "deepseek-v4-flash", "thinking": "low" },
+      { "provider": "google", "model": "gemini-3-flash-preview", "thinking": "medium" },
+      { "provider": "anthropic", "model": "claude-sonnet-4-5", "thinking": "medium" }
+    ],
+    "lightweights+": [
+      { "provider": "github-copilot", "model": "gpt-5-mini", "thinking": "low" },
+      { "provider": "deepseek", "model": "deepseek-v4-flash", "thinking": "low" },
+      { "provider": "google", "model": "gemini-2.5-pro", "thinking": "low" },
+      { "provider": "anthropic", "model": "claude-haiku-4-5", "thinking": "medium" }
+    ],
+    "lightweights": [
+      { "provider": "github-copilot", "model": "claude-haiku-4.5", "thinking": "low" },
+      { "provider": "deepseek", "model": "deepseek-v4-flash", "thinking": "low" },
+      { "provider": "google", "model": "gemini-2.5-flash", "thinking": "low" },
+      { "provider": "anthropic", "model": "claude-haiku-4-5", "thinking": "low" }
+    ]
+  },
+  "tierProviderPriorities": {
+    "sota+": { "github-copilot": 1, "anthropic": 2, "google": 3, "deepseek": 4 },
+    "sota": { "github-copilot": 1, "anthropic": 2, "google": 3, "deepseek": 4 }
+  },
+  "health": {
+    "cooldownMs": {
+      "auth": 3600000,
+      "rate-limit": 600000,
+      "server": 120000,
+      "network": 120000
+    }
+  },
+  "budget": {
+    "maxCostPerSession": 0,
+    "maxCostPerDay": 0,
+    "capTier": "workhorses"
+  },
+  "hysteresis": {
+    "minDowngradeTurns": 2
+  },
+  "scoring": {
+    "weights": {
+      "structure": 0.12,
+      "context": 0.18,
+      "code": 0.25,
+      "agentic": 0.15,
+      "criticality": 0.2,
+      "output": 0.1
+    },
+    "thresholds": {
+      "sota+": 0.82,
+      "sota": 0.66,
+      "workhorses+": 0.5,
+      "workhorses": 0.36,
+      "lightweights+": 0.2,
+      "lightweights": 0
+    }
+  }
+}

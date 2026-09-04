@@ -1,0 +1,40 @@
+{
+  "regression": [
+    { "id": "trivial", "expected": "lightweights", "prompt": "¿qué es 2+2?" },
+    { "id": "quick-resume", "expected": "lightweights", "prompt": "resume esto en una línea: el mercado está subiendo", "note": "techo por intención de rapidez" },
+    { "id": "lista-git", "expected": "lightweights", "prompt": "dame una lista rápida de comandos git" },
+    { "id": "explain-rl", "expected": "lightweights", "prompt": "explica cómo funciona el rate limiting en una API REST" },
+    { "id": "sql-index", "expected": "lightweights", "prompt": "escribe una consulta SQL con índice para buscar pedidos por cliente y explica el query plan" },
+    { "id": "ui-tweak", "expected": "lightweights", "prompt": "cambia el color del botón primario y alinea el header del dashboard" },
+    { "id": "code-fn", "expected": "lightweights+", "prompt": "implementa una función que valide emails en TypeScript con tests:\n```ts\nfunction isValidEmail(s: string): boolean {}\n```\narchivo: src/utils/email.ts" },
+    { "id": "unit-test", "expected": "lightweights+", "prompt": "escribe un test unitario para la función de descuentos en src/utils/discount.ts y actualiza los mocks" },
+    { "id": "refactor-multi", "expected": "lightweights+", "prompt": "refactoriza el módulo de auth. Primero lee src/auth/*.ts, luego separa la lógica de tokens en un servicio propio y actualiza los tests. Hay varios archivos implicados." },
+    { "id": "debug-diff", "expected": "lightweights+", "prompt": "debug este fallo:\ndiff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -10,7 +10,7 @@\n me da un 500 al llamar a /api/orders" },
+    { "id": "refactor-ctx", "expected": "lightweights+", "prompt": "refactoriza el handler de autenticación para extraer la lógica de refresh tokens a un servicio separado. Lee primero src/auth/handler.ts, src/auth/tokens.ts y src/auth/types.ts, propón el nuevo diseño y aplica los cambios con tests actualizados." },
+    { "id": "micro-full", "expected": "workhorses", "prompt": "implementa un microservicio de pagos completo: diseña el esquema de base de datos, escribe los endpoints REST con validación y manejo de errores en Go, crea los tests de integración con mocks, documenta la API con OpenAPI y planifica el rollout por fases. Múltiples archivos implicados: internal/api/*.go, internal/domain/*.go, migrations/*.sql" },
+    { "id": "critical-prod", "expected": "sota", "prompt": "cambia el puerto del servicio en producción y haz deploy, sin backup", "note": "piso por criticality" },
+    { "id": "arch-payments", "expected": "sota", "prompt": "diseña la arquitectura completa del sistema de pagos: escribe un informe detallado con el plan, migración de la base de datos, estrategia de seguridad y propuesta formal (RFC)", "note": "piso por criticality" }
+  ],
+  "aspirational": [
+    {
+      "id": "wh-endpoint",
+      "ideal": "workhorses",
+      "prompt": "Implementa el endpoint de webhooks con reintentos exponenciales y firma HMAC. Este es el handler actual que da 500:\n```ts\nasync function handle(req: Request) {\n  const body = await req.json();\n}\n```\nRefactoriza src/webhooks/handler.ts y src/lib/signature.ts, escribe tests de integración y actualiza el OpenAPI.",
+      "note": "tarea media de código con snippet fallido → bajo-tira a lightweights+ (pesos actuales)"
+    },
+    {
+      "id": "whplus-heavy",
+      "ideal": "workhorses+",
+      "contextPercent": 0.7,
+      "prompt": "Refactoriza el sistema de eventos: el consumer de Kafka se cae en producción por manejo de errores pobre. Rediseña el procesamiento con reintentos, dead-letter queue y idempotencia. Primero lee src/events/consumer.ts y src/events/outbox.ts, luego propón el nuevo diseño, escribe los tests y documenta el proceso completo. Varios módulos implicados.",
+      "note": "refactor pesado de producción → bajo-tira a workhorses"
+    },
+    {
+      "id": "sota-beast",
+      "ideal": "sota+",
+      "contextPercent": 0.85,
+      "prompt": "Diseña e implementa la nueva arquitectura del sistema de pagos distribuido para producción: eventos Kafka con CQRS, migración de la base de datos sin downtime, plan de seguridad y compliance, ADRs y rollout por fases con rollback. Coordina los módulos de infraestructura en paralelo y escribe el informe detallado de la propuesta formal. Estado actual del consumer:\n```go\nfunc main() {\n    consumer, _ := kafka.NewConsumer()\n}\n```\n```sql\nCREATE TABLE payments (\n    id UUID PRIMARY KEY\n);\n```\ndiff --git a/internal/payments/service.go b/internal/payments/service.go\n--- a/internal/payments/service.go\n+++ b/internal/payments/service.go\n@@ -12,7 +12,7 @@\n escribe también el plan de migración y la estrategia de seguridad para el rollout en producción",
+      "note": "tarea frontera máxima → bajo-tira a sota (el threshold 0.82 de sota+ exige señales casi máximas)"
+    }
+  ]
+}
