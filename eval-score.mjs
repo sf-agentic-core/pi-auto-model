@@ -1,15 +1,15 @@
-// Harness de evaluación del classifier del auto-model-router.
+// Classifier evaluation harness for the auto-model-router.
 //
-// Dos secciones en eval-corpus.json:
-//  - "regression": comportamiento actual considerado correcto → gate de CI.
-//  - "aspirational": casos donde el classifier bajo-tira (pesos actuales);
-//    se reportan como gaps documentados, NO rompen CI.
+// Two sections in eval-corpus.json:
+//  - "regression": current behavior considered correct → CI gate.
+//  - "aspirational": cases where the classifier under-scores (current weights);
+//    reported as documented gaps, do NOT break CI.
 //
-// Métricas: accuracy exacta, banda ±1, precision/recall por tier.
+// Metrics: exact accuracy, ±1 band, precision/recall per tier.
 //
-// Uso:
+// Usage:
 //   node --experimental-strip-types extensions/auto-model-router/eval-score.mjs
-// Salida no-cero si exact < EVAL_ACCURACY_MIN (default 0.9) o banda < 0.95.
+// Non-zero exit if exact < EVAL_ACCURACY_MIN (default 0.9) or band < 0.95.
 import { readFileSync } from "node:fs";
 import { __test } from "./index.ts";
 
@@ -30,7 +30,7 @@ function usageOf(entry) {
     : undefined;
 }
 
-// --- Regression: gate de CI -------------------------------------------------
+// --- Regression: CI gate ----------------------------------------------------
 let exact = 0;
 let band = 0;
 const total = regression.length;
@@ -57,12 +57,12 @@ for (const c of regression) {
   }
 }
 
-console.log(`=== Eval classifier auto-model-router ===`);
+console.log(`=== Auto-model-router classifier evaluation ===`);
 console.log(
-  `regression (${total}): exacta ${((exact / total) * 100).toFixed(1)}% (${exact}/${total}) · banda ±1 ${((band / total) * 100).toFixed(1)}%`,
+  `regression (${total}): exact ${((exact / total) * 100).toFixed(1)}% (${exact}/${total}) · ±1 band ${((band / total) * 100).toFixed(1)}%`,
 );
 
-console.log("\n--- Precision/recall por tier (regression) ---");
+console.log("\n--- Precision/recall per tier (regression) ---");
 for (const t of TIERS) {
   const tp = confusion[t]?.[t] ?? 0;
   const predicted = TIERS.reduce((acc, p) => acc + (confusion[p]?.[t] ?? 0), 0);
@@ -75,22 +75,22 @@ for (const t of TIERS) {
 }
 
 if (failures.length > 0) {
-  console.log("\n--- Fallos de regression ---");
+  console.log("\n--- Regression failures ---");
   for (const f of failures) {
-    console.log(`  [${f.id}] esperado ${f.expected} · got ${f.got} · dist ${f.dist} · score ${f.score}\n      "${f.prompt}"`);
+    console.log(`  [${f.id}] expected ${f.expected} · got ${f.got} · dist ${f.dist} · score ${f.score}\n      "${f.prompt}"`);
   }
 }
 
-// --- Aspirational: gaps documentados (no rompen CI) -------------------------
+// --- Aspirational: documented gaps (do not break CI) -------------------------
 if (aspirational.length > 0) {
-  console.log("\n--- Gaps aspirational (el classifier bajo-tira; candidatos a calibración #9) ---");
+  console.log("\n--- Aspirational gaps (the classifier under-scores; calibration candidates #9) ---");
   for (const c of aspirational) {
     const { tier, score } = __test.classifyPrompt(c.prompt, __test.DEFAULT_CONFIG, usageOf(c));
     const ok = tier === c.ideal;
     console.log(
       `  ${ok ? "✅" : "⚠️"} [${c.id}] ideal ${c.ideal} · got ${tier} (score ${score.toFixed(3)})${ok ? "" : ` · dist ${Math.abs(idxOf[tier] - idxOf[c.ideal])}`}`,
     );
-    if (!ok && c.note) console.log(`       nota: ${c.note}`);
+    if (!ok && c.note) console.log(`       note: ${c.note}`);
   }
 }
 
