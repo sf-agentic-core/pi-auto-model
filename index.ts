@@ -444,6 +444,18 @@ function cooldownMsFor(cfg: AutoModelConfig, reason: HealthReason): number {
   return cfg.health.cooldownMs[reason] ?? 120_000;
 }
 
+/**
+ * Maps an HTTP status to a provider health reason. Returns null for statuses
+ * that are not a retryable provider outage (e.g. 200, 400 client mistakes).
+ */
+function httpStatusReason(status: number | undefined): HealthReason | null {
+  if (status === undefined) return null;
+  if (status === 429) return "rate-limit";
+  if (status === 401 || status === 403) return "auth";
+  if (status >= 500 && status <= 599) return "server";
+  return null;
+}
+
 function isProviderHealthy(health: HealthMap, provider: string, now = Date.now()): boolean {
   const h = health[provider];
   return !h || h.degradedUntil <= now;
@@ -531,18 +543,26 @@ export function parsePinSpec(spec: string): { provider: string; model: string } 
 }
 
 /**
- * Next rescue candidate after a failure: the first model of the tier
- * after the failed one that is enabled and healthy. undefined if none.
+ * Next rescue candidate after a failure: the first model of the tier after the
+ * failed one that is enabled and healthy. The WHOLE failed provider is skipped
+ * (plus any extra providers in `skipProviders`), so when a provider-wide quota
+ * exhaustion or outage brings down several of its models, the router moves on to
+ * a genuinely different provider instead of retrying the same dead provider.
+ * Returns undefined when no usable candidate remains.
  */
 export function nextRescueCandidate(
   candidates: ModelEntry[],
   failedKey: string,
   isHealthy: (provider: string) => boolean,
   isEnabled: (provider: string) => boolean,
+  skipProviders: string[] = [],
 ): ModelEntry | undefined {
+  const skip = new Set(skipProviders);
   const idx = candidates.findIndex((e) => usageKey(e.provider, e.model) === failedKey);
   if (idx === -1) return undefined;
-  return candidates.slice(idx + 1).find((e) => isEnabled(e.provider) && isHealthy(e.provider));
+  return candidates
+    .slice(idx + 1)
+    .find((e) => isEnabled(e.provider) && isHealthy(e.provider) && !skip.has(e.provider));
 }
 
 /**
@@ -1046,6 +1066,7 @@ export const __test = {
   pickModel,
   hasAssistantHistory,
   classifyError,
+  httpStatusReason,
   cooldownMsFor,
   isProviderHealthy,
   dominantSignal,
@@ -1326,7 +1347,9 @@ export default function (pi: ExtensionAPI) {
 
     // 🚑 Mid-turn rescue: recoverable error → next candidate of the tier
     // (healthy and enabled) + retry of the same prompt. Health already
-    // degraded the failed provider, so the retry does not go back to it.
+    // degraded the failed provider, so the retry does not go back to it. The
+    // failed PROVIDER is also skipped explicitly (not just the failed model)
+    // so provider-wide quota/outage errors move to the next real provider.
     if (lastTurnLocked || rescueBudget <= 0 || !lastPrompt) return;
     const failedKey = usageKey(
       provider,
@@ -1337,6 +1360,7 @@ export default function (pi: ExtensionAPI) {
       failedKey,
       isHealthy,
       (p) => cfg.providers[p]?.enabled !== false,
+      [provider],
     );
     if (!next) return;
     const nm = ctx.modelRegistry.find(next.provider, next.model);
@@ -1347,7 +1371,7 @@ export default function (pi: ExtensionAPI) {
     rescueCount++;
     console.error(`[auto-model-router] RESCUE ${failedKey} (${reason}) -> ${nm.provider}/${nm.id}`);
     ctx.ui.notify(
-      `🚑 Rescue: ${failedKey} failed (${reason}) → retrying with ${nm.provider}/${nm.id} (${rescueBudget} rescues left)`,
+      `🚑 Rescue: ${failedKey} failed (${reason}) → switching provider to ${nm.provider}/${nm.id} and retrying (${rescueBudget} rescues left)`,
       "warning",
     );
     try {
@@ -1355,6 +1379,26 @@ export default function (pi: ExtensionAPI) {
     } catch (err) {
       console.error(`[auto-model-router] error during rescue retry:`, err);
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // after_provider_response — early, reliable provider-outage detection
+  // -------------------------------------------------------------------------
+  // Pi surfaces provider outages here at the HTTP layer (event.status) BEFORE
+  // the response is consumed, so a quota-exhausted provider (429) or an
+  // overloaded one (5xx) is degraded immediately regardless of how the error
+  // later surfaces (or fails to surface) as a message. Once degraded, routing
+  // skips that provider and picks the next one in priority order, so the session
+  // never stays stuck on the dead provider.
+  pi.on("after_provider_response", (event, ctx) => {
+    if (isSubagentProcess()) return;
+    if (!enabled) return;
+    const reason = httpStatusReason(event.status);
+    if (!reason) return;
+    // ctx.model may be typed without provider in this event; read defensively.
+    const provider = (ctx as { model?: { provider?: string } }).model?.provider;
+    if (!provider) return;
+    degradeProvider(ctx as never, provider, reason, `HTTP ${event.status}`);
   });
 
   const warn = (ctx: { ui: { notify(t: string, lvl?: string): void } }, msg: string) => {
