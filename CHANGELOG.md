@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/sf-agentic-core/pi-auto-model/compare/pi-auto-model-v0.2.0...pi-auto-model-v0.2.1) (2026-09-05)
+
+
+### Bug Fixes
+
+* continue provider rotation when a provider runs out of tokens ([719a9f6](https://github.com/sf-agentic-core/pi-auto-model/commit/719a9f697d9e6e07a0f161363bb1c08037d7fb78))
+* continue provider rotation when a provider runs out of tokens ([8d55698](https://github.com/sf-agentic-core/pi-auto-model/commit/8d556983f0c75edab7dc2de75b9b59b0458e176d))
+
 ## [0.2.0](https://github.com/sf-agentic-core/pi-auto-model/compare/pi-auto-model-v0.1.0...pi-auto-model-v0.2.0) (2026-09-04)
 
 
