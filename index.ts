@@ -1,43 +1,43 @@
 /**
- * Auto Model Router v2 — extension global de pi
- * ==============================================
+ * Auto Model Router v2 — global pi extension
+ * ==========================================
  *
- * Selecciona automáticamente el modelo más apropiado para cada tarea,
- * en función de una taxonomía de 6 niveles (tiers):
+ * Automatically selects the most appropriate model for each task,
+ * based on a taxonomy of 6 levels (tiers):
  *
  *     sota+ / sota / workhorses+ / workhorses / lightweights+ / lightweights
  *
- * Cada tier define UNA LISTA de candidatos {provider, model} y los providers
- * se pueden habilitar/deshabilitar en la configuración. Si un provider está
- * deshabilitado, sus modelos se excluyen de la permutación (por ejemplo: SOTA
- * tiene claude-fable-5 (anthropic) y gemini-3.1-pro-preview (google), pero si
- * anthropic está deshabilitado, se usará gemini-3.1-pro-preview).
+ * Each tier defines A LIST of {provider, model} candidates, and providers
+ * can be enabled/disabled in the configuration. If a provider is disabled,
+ * its models are excluded from the permutation (for example: SOTA has
+ * claude-fable-5 (anthropic) and gemini-3.1-pro-preview (google), but if
+ * anthropic is disabled, gemini-3.1-pro-preview will be used).
  *
- * La selección del nivel NO es trivial (no se basa solo en la longitud del
- * prompt): calcula un score de complejidad multicomponente:
+ * The tier selection is NOT trivial (it is not based only on prompt
+ * length): it computes a multicomponent complexity score:
  *
- *   - structure  : tamaño estimado en tokens + imágenes adjuntas
- *   - context    : presión del contexto de la sesión (getContextUsage)
- *   - code       : densidad de código (bloques ```, diffs, paths, verbos)
- *   - agentic    : profundidad agéntica (tools activas, skills, contextFiles,
- *                  indicadores multi-paso en el prompt)
- *   - criticality: riesgo (producción, deploy, migración, seguridad, dinero…)
- *   - output     : formato esperado de salida (informe largo vs. una línea)
+ *   - structure  : estimated size in tokens + attached images
+ *   - context    : session context pressure (getContextUsage)
+ *   - code       : code density (``` blocks, diffs, paths, verbs)
+ *   - agentic    : agentic depth (active tools, skills, contextFiles,
+ *                  multi-step indicators in the prompt)
+ *   - criticality: risk (production, deploy, migration, security, money…)
+ *   - output     : expected output format (long report vs. one line)
  *
- * Los pesos y umbrales son configurables (~/.pi/agent/auto-model.json).
+ * Weights and thresholds are configurable (~/.pi/agent/auto-model.json).
  *
- * Uso:
- *   - Automático en cada prompt (si "enabled": true).
- *   - Prefijo "!!"  → salta el router este turno.
- *   - Prefijo "@@tier" (ej. "@@sota haz X") → fuerza un nivel concreto.
- *   - /auto-model                 → estado + último desglose de scoring
+ * Usage:
+ *   - Automatic on every prompt (if "enabled": true).
+ *   - Prefix "!!"        → skips the router for this turn.
+ *   - Prefix "@@tier" (e.g. "@@sota do X") → forces a specific level.
+ *   - /auto-model                 → status + last scoring breakdown
  *   - /auto-model on|off          → toggle
- *   - /auto-model reload          → recarga la configuración
- *   - /auto-model config          → muestra la ruta de configuración
- *   - /auto-model score <texto>   → simula el scoring sin enviar nada
+ *   - /auto-model reload          → reloads the configuration
+ *   - /auto-model config          → shows the configuration path
+ *   - /auto-model score <text>    → simulates scoring without sending anything
  *
- * Configuración: ~/.pi/agent/auto-model.json (opcional; si falta, usa los
- * defaults embebidos). Ver config.example.json en este directorio.
+ * Configuration: ~/.pi/agent/auto-model.json (optional; if missing, uses the
+ * embedded defaults). See config.example.json in this directory.
  */
 
 import type {
@@ -57,7 +57,7 @@ export function isSubagentProcess(env: NodeJS.ProcessEnv = process.env): boolean
 }
 
 // ---------------------------------------------------------------------------
-// Tipos de configuración
+// Configuration types
 // ---------------------------------------------------------------------------
 
 export type TierId =
@@ -80,13 +80,13 @@ export type ThinkingLevel =
 export interface ModelEntry {
   provider: string;
   model: string;
-  /** Nivel de thinking opcional al seleccionar este modelo. */
+  /** Optional thinking level when selecting this model. */
   thinking?: ThinkingLevel;
 }
 
 export interface ProviderConfig {
   enabled: boolean;
-  /** Menor = preferido dentro del tier (empate con affinity del provider). */
+  /** Lower = preferred within the tier (ties broken by provider affinity). */
   priority?: number;
 }
 
@@ -95,20 +95,20 @@ export interface AutoModelConfig {
   providers: Record<string, ProviderConfig>;
   tiers: Record<TierId, ModelEntry[]>;
   /**
-   * Prioridades de provider específicas por tier. Sobrescriben la priority
-   * general de `providers` SOLO para ese tier; los providers no listados en
-   * el mapa de un tier usan su priority general. Vacío → todo usa la general.
+   * Per-tier provider priorities. They override the general `providers`
+   * priority ONLY for that tier; providers not listed in a tier's map use
+   * their general priority. Empty → everything uses the general one.
    */
   tierProviderPriorities: Partial<Record<TierId, Record<string, number>>>;
-  /** Salud de providers: cooldowns por tipo de error. */
+  /** Provider health: cooldowns per error category. */
   health: {
     cooldownMs: Record<HealthReason, number>;
   };
   /**
-   * Presupuesto: límites de coste con techo de tier. 0 = deshabilitado.
-   * Cuando el coste de sesión o día supera el límite, el routing se techa
-   * en `capTier` (el nivel de capacidad máximo permitido) — aplica también
-   * a tiers forzados con @@tier (guardarraíl duro).
+   * Budget: cost limits with a tier cap. 0 = disabled.
+   * When the session or day cost exceeds the limit, routing is capped at
+   * `capTier` (the maximum allowed capability level) — it also applies to
+   * tiers forced with @@tier (hard guardrail).
    */
   budget: {
     maxCostPerSession: number;
@@ -116,9 +116,9 @@ export interface AutoModelConfig {
     capTier: TierId;
   };
   /**
-   * Histéresis anti-flip-flop: para BAJAR de tier, el tier actual debe haberse
-   * mantenido al menos `minDowngradeTurns` turnos rutados. Las subidas son
-   * siempre inmediatas. 0 = deshabilitado.
+   * Anti-flip-flop hysteresis: to DOWNGRADE a tier, the current tier must
+   * have been held for at least `minDowngradeTurns` routed turns. Upgrades
+   * are always immediate. 0 = disabled.
    */
   hysteresis: {
     minDowngradeTurns: number;
@@ -132,7 +132,7 @@ export interface AutoModelConfig {
 export type HealthReason = "auth" | "rate-limit" | "server" | "network";
 
 export interface ProviderHealth {
-  /** Epoch ms hasta el que el provider está degradado. */
+  /** Epoch ms until which the provider is degraded. */
   degradedUntil: number;
   reason: HealthReason;
   lastError: string;
@@ -150,7 +150,7 @@ type SignalKey =
   | "output";
 
 // ---------------------------------------------------------------------------
-// Defaults embebidos (se pueden sobreescribir con ~/.pi/agent/auto-model.json)
+// Embedded defaults (overridable via ~/.pi/agent/auto-model.json)
 // ---------------------------------------------------------------------------
 
 const TIER_ORDER: TierId[] = [
@@ -249,7 +249,7 @@ const DEFAULT_CONFIG: AutoModelConfig = {
 };
 
 // ---------------------------------------------------------------------------
-// Carga de configuración (merge profundo sobre defaults)
+// Configuration loading (deep merge over defaults)
 // ---------------------------------------------------------------------------
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "auto-model.json");
@@ -276,9 +276,9 @@ function deepMerge<T>(base: T, override: unknown): T {
 }
 
 /**
- * Config efectiva para un proyecto: defaults embebidos → archivo global
- * (~/.pi/agent/auto-model.json) → archivo de proyecto (./.pi/auto-model.json).
- * El proyecto solo se aplica cuando cwd se pasa (proyecto de confianza).
+ * Effective config for a project: embedded defaults → global file
+ * (~/.pi/agent/auto-model.json) → project file (./.pi/auto-model.json).
+ * The project is only applied when cwd is passed (trusted project).
  */
 export function mergeConfigs(globalObj: unknown, projectObj?: unknown): AutoModelConfig {
   let cfg = deepMerge(DEFAULT_CONFIG, globalObj);
@@ -296,7 +296,7 @@ function loadConfig(cwd?: string): AutoModelConfig {
       global = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
     }
   } catch (err) {
-    console.error(`[auto-model-router] error leyendo ${CONFIG_PATH}:`, err);
+    console.error(`[auto-model-router] error reading ${CONFIG_PATH}:`, err);
   }
   if (cwd) {
     const projectPath = join(cwd, ".pi", "auto-model.json");
@@ -305,21 +305,21 @@ function loadConfig(cwd?: string): AutoModelConfig {
         project = JSON.parse(readFileSync(projectPath, "utf-8"));
       }
     } catch (err) {
-      console.error(`[auto-model-router] error leyendo ${projectPath}:`, err);
+      console.error(`[auto-model-router] error reading ${projectPath}:`, err);
     }
   }
   return mergeConfigs(global, project);
 }
 
 // ---------------------------------------------------------------------------
-// Scoring multicomponente (cada señal → [0,1])
+// Multicomponent scoring (each signal → [0,1])
 // ---------------------------------------------------------------------------
 
 function tokenEstimate(text: string): number {
   return Math.max(1, Math.round(text.length / 4));
 }
 
-/** 1) Estructura: tamaño del prompt + imágenes. */
+/** 1) Structure: prompt size + attached images. */
 function scoreStructure(prompt: string, imageCount: number): number {
   const tokens = tokenEstimate(prompt);
   let s: number;
@@ -332,9 +332,9 @@ function scoreStructure(prompt: string, imageCount: number): number {
   return s;
 }
 
-/** 2) Contexto: presión del contexto de la sesión. */
+/** 2) Context: session context pressure. */
 function scoreContext(usage: ContextUsage | undefined): number {
-  if (!usage || usage.percent === null) return 0.3; // desconocido → leve
+  if (!usage || usage.percent === null) return 0.3; // unknown → mild
   const p = usage.percent;
   if (p < 0.2) return 0.1;
   if (p < 0.4) return 0.3;
@@ -343,7 +343,7 @@ function scoreContext(usage: ContextUsage | undefined): number {
   return 0.95;
 }
 
-/** 3) Código: densidad de tareas de ingeniería. */
+/** 3) Code: density of engineering tasks. */
 const CODE_BLOCK_RE = /```[\s\S]*?```/g;
 const DIFF_RE = /(^|\n)(diff --git|--- |\+\+\+ |@@ )/;
 const FILE_PATH_RE =
@@ -359,7 +359,7 @@ function scoreCode(prompt: string): number {
   return Math.min(1, blockSig + fileSig + verbSig);
 }
 
-/** 4) Agentic: profundidad de la tarea agéntica. */
+/** 4) Agentic: depth of the agentic task. */
 const MULTISTEP_RE =
   /(paso\s*\d|step\s*\d|primero.{0,60}(luego|despu[eé]s|entonces)|investiga.{0,80}(y\s|luego)|busca.{0,80}(y\s|luego)|lee.{0,80}(y\s|luego)|explora.{0,80}(y\s|luego)|y\s+luego|entonces|despu[eé]s\s+de|en paralelo|a la vez|s[íi]ncelo|coordina|encadena|multi[ -]paso|por fases|fase 1|fase 2|end-to-end|varios (archivos|ficheros|servicios)|m[úu]ltiples (archivos|ficheros|servicios|m[óo]dulos|componentes)|todos los (archivos|ficheros|servicios))/i;
 const BIG_SCOPE_RE = /\b(de cero|from scratch|completo|completa|plataforma|sistema entero|end-to-end|microservicio)\b/i;
@@ -392,7 +392,7 @@ function scoreAgentic(
   return Math.min(1, s);
 }
 
-/** 5) Criticality: riesgo operativo o de datos. */
+/** 5) Criticality: operational or data risk. */
 const CRITICAL_RE =
   /\b(produ[cct]ion|prod\b|deploy|release|rollback|migraci[oó]n|migration|breaking|irreversible|seguridad|security|vulnerabil|exploit|datos sensibles|sensitive data|pii|customer data|datos de clientes|financiero|financial|dinero|money|factura|invoice|contrato|contract|compliance|audit(?:or[ií]a)?|drop table|truncate|rm -rf|borra (la )?(base|tabla|datos)|elimina (la )?(base|tabla|datos)|sin copia de seguridad|no backup)\b/i;
 
@@ -401,7 +401,7 @@ function scoreCriticality(prompt: string): number {
   return Math.min(1, matches * 0.35);
 }
 
-/** 6) Output: formato esperado de la respuesta. */
+/** 6) Output: expected response format. */
 const LONG_OUTPUT_RE =
   /\b(documenta|document this|informe|report|tutorial|gu[ií]a completa|explain in detail|explica en detalle|detallado|plan detallado|dise[ñn]o completo|write (a |the |un )?(full|complete|detailed)|escribe (un |una |el |la )?(informe|documento|tutorial|manual)|describe el proceso completo|arquitectura completa|rfc|adr|proposal|propuesta formal)\b/i;
 const SHORT_OUTPUT_RE =
@@ -414,7 +414,7 @@ function scoreOutput(prompt: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// Salud de providers (dead-provider detection)
+// Provider health (dead-provider detection)
 // ---------------------------------------------------------------------------
 
 const HEALTH_PATTERNS: Array<[HealthReason, RegExp]> = [
@@ -427,9 +427,9 @@ const CONTEXT_OVERFLOW_RE =
   /context_length_exceeded|maximum context|context window|token limit|too many tokens/i;
 
 /**
- * Clasifica un mensaje de error en una categoría de salud de provider.
- * Devuelve null si el error NO es problema del provider (p.ej. desbordamiento
- * de contexto, que pi gestiona con compactación).
+ * Classifies an error message into a provider health category.
+ * Returns null if the error is NOT the provider's fault (e.g. context
+ * overflow, which pi handles through compaction).
  */
 function classifyError(errorMessage: string): HealthReason | null {
   if (!errorMessage) return null;
@@ -450,7 +450,7 @@ function isProviderHealthy(health: HealthMap, provider: string, now = Date.now()
 }
 
 // ---------------------------------------------------------------------------
-// Uso y coste (dashboard)
+// Usage and cost (dashboard)
 // ---------------------------------------------------------------------------
 
 export interface ModelUsage {
@@ -504,7 +504,7 @@ export function aggregateUsage(
   return acc;
 }
 
-/** Tier al que pertenece un modelo (primera coincidencia de mayor a menor). */
+/** Tier a model belongs to (first match from highest to lowest). */
 export function tierForModel(
   cfg: AutoModelConfig,
   provider: string,
@@ -517,8 +517,8 @@ export function tierForModel(
 }
 
 /**
- * Parsea una especificación "provider/model" para el pin. Devuelve null si
- * no tiene la forma esperada.
+ * Parses a "provider/model" spec for the pin. Returns null if it does
+ * not have the expected shape.
  */
 export function parsePinSpec(spec: string): { provider: string; model: string } | null {
   const s = spec.trim();
@@ -531,8 +531,8 @@ export function parsePinSpec(spec: string): { provider: string; model: string } 
 }
 
 /**
- * Siguiente candidato de rescate tras un fallo: el primer modelo del tier
- * posterior al que falló, que esté habilitado y sano. undefined si no hay.
+ * Next rescue candidate after a failure: the first model of the tier
+ * after the failed one that is enabled and healthy. undefined if none.
  */
 export function nextRescueCandidate(
   candidates: ModelEntry[],
@@ -546,12 +546,12 @@ export function nextRescueCandidate(
 }
 
 /**
- * Histéresis: decide si una BAJADA de tier se permite o se bloquea.
- * - Sin tier activo, subida o mismo tier → sin cambios (blocked=false).
- * - Bajada con turnos estables >= min → permitida (devuelve el natural).
- * - Bajada con turnos < min → bloqueada (devuelve el tier activo).
- * force ignora la histéresis (se maneja en el handler pasando min=0 o el
- * propio handler evitando llamarla en el camino forzado).
+ * Hysteresis: decides whether a tier DOWNGRADE is allowed or blocked.
+ * - No active tier, upgrade, or same tier → no change (blocked=false).
+ * - Downgrade with stable turns >= min → allowed (returns the natural tier).
+ * - Downgrade with turns < min → blocked (returns the active tier).
+ * force ignores hysteresis (handled in the handler by passing min=0 or by
+ * the handler itself avoiding the call on the forced path).
  */
 export function hysteresisTier(
   tier: TierId,
@@ -562,24 +562,24 @@ export function hysteresisTier(
   if (!activeTier || minDowngradeTurns <= 0) return { tier, blocked: false };
   const natIdx = TIER_ORDER.indexOf(tier);
   const actIdx = TIER_ORDER.indexOf(activeTier);
-  if (natIdx <= actIdx) return { tier, blocked: false }; // misma capacidad o subida
+  if (natIdx <= actIdx) return { tier, blocked: false }; // same capability or upgrade
   if (activeTierTurns < minDowngradeTurns) {
-    return { tier: activeTier, blocked: true }; // baja bloqueada → mantener
+    return { tier: activeTier, blocked: true }; // downgrade blocked → keep
   }
-  return { tier, blocked: false }; // baja permitida
+  return { tier, blocked: false }; // downgrade allowed
 }
 
 /**
- * Muestra de calibración: señal implícita del usuario sobre la decisión.
- * - override: el usuario forzó @@tier distinto al natural del router.
- * - bypass: el usuario usó !! y saltó el routing en ese prompt.
+ * Calibration sample: implicit user signal about the decision.
+ * - override: the user forced a @@tier different from the router's natural one.
+ * - bypass: the user used !! and skipped routing on that prompt.
  */
 export interface CalibrationSample {
   ts: number;
   kind: "override" | "bypass";
-  /** Tier natural que el router habría decidido. */
+  /** The natural tier the router would have decided. */
   routerTier: TierId;
-  /** override: el tier forzado con @@tier. */
+  /** override: the tier forced with @@tier. */
   forcedTier?: TierId;
   score: number;
   dominant: SignalKey;
@@ -597,9 +597,9 @@ export interface CalibrationReport {
   total: number;
   overrides: number;
   bypasses: number;
-  /** Usuario pidió MÁS capacidad que el router (bajo-tiro del router). */
+  /** User asked for MORE capability than the router (router undershoot). */
   under: number;
-  /** Usuario pidió MENOS capacidad que el router (sobre-tiro). */
+  /** User asked for LESS capability than the router (overshoot). */
   over: number;
   perSignal: Record<SignalKey, { under: number; over: number }>;
   weightSuggestions: WeightSuggestion[];
@@ -610,9 +610,9 @@ const WEIGHT_DELTA_PER_SAMPLE = 0.01;
 const MAX_WEIGHT_DELTA = 0.06;
 
 /**
- * Analiza las correcciones del usuario y sugiere deltas de peso por señal
- * (más bajo-tiros que sobre-tiros en una señal → subir su peso, y al revés).
- * Puro y determinista; no muta la configuración.
+ * Analyzes the user's corrections and suggests per-signal weight deltas
+ * (more undershoots than overshoots on a signal → raise its weight, and
+ * vice versa). Pure and deterministic; does not mutate the configuration.
  */
 export function analyzeCalibration(
   samples: CalibrationSample[],
@@ -678,7 +678,7 @@ export function analyzeCalibration(
     const thr = cfg.scoring.thresholds[target as TierId];
     if (med < thr) {
       boundaryHints.push(
-        `${scores.length} subida(s) forzada(s) a ${target} desde tier inferior (score medio ${med.toFixed(2)}) — el threshold de ${target} (${thr}) puede estar alto; revisa también el peso de la señal dominante.`,
+        `${scores.length} forced upgrade(s) to ${target} from a lower tier (mean score ${med.toFixed(2)}) — the ${target} threshold (${thr}) may be high; also review the dominant signal weight.`,
       );
     }
   }
@@ -697,17 +697,17 @@ export function analyzeCalibration(
 
 export interface BudgetClamp {
   tier: TierId;
-  /** true si el presupuesto está superado (independiente de si hubo clamp). */
+  /** true if the budget is exceeded (regardless of whether there was a clamp). */
   over: boolean;
-  /** true si el tier se rebajó por el techo. */
+  /** true if the tier was lowered by the cap. */
   clamped: boolean;
   reason: "session" | "day" | null;
 }
 
 /**
- * Aplica el techo de presupuesto: si el coste de sesión o día supera el límite,
- * el tier se techa en `capTier`. 0 en los límites = deshabilitado. El techo es
- * un guardarraíl duro: puede rebajar incluso tiers forzados.
+ * Applies the budget cap: if the session or day cost exceeds the limit,
+ * the tier is capped at `capTier`. 0 in the limits = disabled. The cap is
+ * a hard guardrail: it can downgrade even forced tiers.
  */
 export function clampTierToBudget(
   tier: TierId,
@@ -733,7 +733,7 @@ export function clampTierToBudget(
 }
 
 // ---------------------------------------------------------------------------
-// Resolución del tier
+// Tier resolution
 // ---------------------------------------------------------------------------
 
 export interface ScoreSignals {
@@ -784,8 +784,8 @@ const SIGNAL_ICONS: Record<SignalKey, string> = {
 };
 
 /**
- * Señal dominante: la que más contribución ponderada aporta al score
- * (peso × valor). Es la que explica la decisión del tier.
+ * Dominant signal: the one contributing the most weighted contribution
+ * to the score (weight × value). It explains the tier decision.
  */
 function dominantSignal(
   signals: ScoreSignals,
@@ -804,9 +804,9 @@ function dominantSignal(
 }
 
 /**
- * Pipeline estático del classifier (determinista, para eval/calibración):
- * señales → score → tier (con quickIntent y sin estado de sesión como salud,
- * presupuesto o histéresis). Es lo que el harness de evaluación testea.
+ * Static classifier pipeline (deterministic, for eval/calibration):
+ * signals → score → tier (with quickIntent and without session state such as
+ * health, budget or hysteresis). This is what the evaluation harness tests.
  */
 export function classifyPrompt(
   prompt: string,
@@ -824,22 +824,23 @@ export function classifyPrompt(
 }
 
 /**
- * Mapa score → tier. Aplica reglas de piso/techo coherentes:
- *  - criticality alta (>=0.7) impone un piso en sota (la seguridad manda).
- *  - intención explícita de rapidez (SHORT_OUTPUT_RE) impone un techo en
- *    workhorses (nada de gastar SOTA en "resume esto en una línea").
- *  - El piso de criticality gana al techo de rapidez (un cambio de prod
- *    "rápido" sigue mereciendo un modelo serio).
+ * Score → tier map. Applies consistent floor/ceiling rules:
+ *  - high criticality (>=0.7) imposes a floor at sota (safety comes first).
+ *  - explicit fast intent (SHORT_OUTPUT_RE) imposes a ceiling at
+ *    workhorses (do not waste SOTA on "summarize this in one line").
+ *  - The criticality floor beats the fast ceiling (a "quick" prod change
+ *    still deserves a serious model).
  */
 /**
- * Mapa score → tier. Aplica reglas de piso/techo coherentes:
- *  - criticality alta (>=0.7) impone un piso de CAPACIDAD en sota (la seguridad
- *    manda: un cambio de prod "rápido" sigue mereciendo un modelo serio).
- *  - intención explícita de rapidez (SHORT_OUTPUT_RE) impone un techo de
- *    CAPACIDAD en workhorses (no gastar SOTA en trivialidades).
+ * Score → tier map. Applies consistent floor/ceiling rules:
+ *  - high criticality (>=0.7) imposes a CAPABILITY floor at sota (safety
+ *    first: a "quick" prod change still deserves a serious model).
+ *  - explicit fast intent (SHORT_OUTPUT_RE) imposes a CAPABILITY ceiling at
+ *    workhorses (do not waste SOTA on trivialities).
  *
- * OJO: TIER_ORDER va de mayor a menor capacidad (sota+ → lightweights), así que
- * el techo de capacidad = índice MÍNIMO y el piso de capacidad = índice MÁXIMO.
+ * NOTE: TIER_ORDER goes from highest to lowest capability (sota+ →
+ * lightweights), so the capability ceiling = MINIMUM index and the
+ * capability floor = MAXIMUM index.
  */
 function resolveTier(
   score: number,
@@ -847,15 +848,15 @@ function resolveTier(
   quickIntent: boolean,
   thresholds: AutoModelConfig["scoring"]["thresholds"],
 ): TierId {
-  // Índices en el espacio de TIER_ORDER (0 = sota+, 5 = lightweights)
-  let minCapabilityIdx = 0; // techo de capacidad (nunca más capaz que esto)
-  let maxCapabilityIdx = TIER_ORDER.length - 1; // piso de capacidad
+  // Indices in TIER_ORDER space (0 = sota+, 5 = lightweights)
+  let minCapabilityIdx = 0; // capability ceiling (never more capable than this)
+  let maxCapabilityIdx = TIER_ORDER.length - 1; // capability floor
 
   if (signals.criticality >= 0.7) {
-    // Piso: nunca por debajo de sota → índice máximo 1
+    // Floor: never below sota → max index 1
     maxCapabilityIdx = TIER_ORDER.indexOf("sota");
   } else if (quickIntent) {
-    // Techo: nunca por encima de workhorses → índice mínimo 3
+    // Ceiling: never above workhorses → min index 3
     minCapabilityIdx = TIER_ORDER.indexOf("workhorses");
   }
 
@@ -873,7 +874,7 @@ function resolveTier(
 }
 
 // ---------------------------------------------------------------------------
-// Selección de modelo dentro del tier (permutación sobre providers activos)
+// Model selection within the tier (permutation over active providers)
 // ---------------------------------------------------------------------------
 
 interface PickResult {
@@ -883,14 +884,14 @@ interface PickResult {
 }
 
 /**
- * Candidatos de un tier ordenados: providers habilitados → afinidad con el
- * provider actual → priority del provider → orden de lista.
+ * Ordered candidates of a tier: enabled providers → affinity with the
+ * current provider → provider priority → list order.
  */
 /**
- * ¿Hay historial de conversación (algún turno de assistant ya completado)?
- * En el primer prompt de una sesión no hay continuidad que conservar, así que
- * la afinidad de provider se salta y mandan las priorities puras (arranque
- * en frío). A partir del segundo turno la afinidad vuelve a aplicar.
+ * Is there conversation history (at least one completed assistant turn)?
+ * On the first prompt of a session there is no continuity to preserve, so
+ * provider affinity is skipped and pure priorities win (cold start). From
+ * the second turn onward, affinity applies again.
  */
 function hasAssistantHistory(sm: { getEntries(): unknown[] } | undefined): boolean {
   try {
@@ -901,23 +902,23 @@ function hasAssistantHistory(sm: { getEntries(): unknown[] } | undefined): boole
         (e as { message?: { role?: string } }).message?.role === "assistant",
     );
   } catch {
-    // Defensivo: si no se puede inspeccionar, aplicar afinidad (estándar).
+    // Defensive: if it cannot be inspected, apply affinity (standard).
     return true;
   }
 }
 
 /**
- * Candidatos de un tier ordenados.
+ * Ordered candidates of a tier.
  *
- * Providers habilitados → orden según dos modos:
+ * Enabled providers → order follows two modes:
  *
- *  - Sin `tierProviderPriorities[tier]` (comportamiento estándar):
- *      afinidad con el provider actual (continuidad/caching) → priority
- *      del provider → orden de lista. La afinidad se omite en arranque en
- *      frío (primer turno de la sesión, sin historial).
- *  - Con mapa específico del tier: la priority del tier MANDA (sobrescribe
- *      la general solo para ese tier); la afinidad desempata; el orden de
- *      lista es el último criterio.
+ *  - Without `tierProviderPriorities[tier]` (standard behavior):
+ *      affinity with the current provider (continuity/caching) → provider
+ *      priority → list order. Affinity is omitted on cold start (first
+ *      session turn, no history).
+ *  - With a tier-specific map: the tier priority RULES (overrides the
+ *      general one only for that tier); affinity breaks ties; list order
+ *      is the last criterion.
  */
 function orderedCandidates(
   cfg: AutoModelConfig,
@@ -939,7 +940,7 @@ function orderedCandidates(
 
   return [...entries].sort((a, b) => {
     if (hasTierMap) {
-      // Prioridades explícitas del tier mandan; afinidad solo desempata.
+      // Explicit tier priorities rule; affinity only breaks ties.
       const pa = effectivePriority(a.provider);
       const pb = effectivePriority(b.provider);
       if (pa !== pb) return pa - pb;
@@ -948,7 +949,7 @@ function orderedCandidates(
       if (aAff !== bAff) return bAff - aAff;
       return entries.indexOf(a) - entries.indexOf(b);
     }
-    // Estándar: afinidad (continuidad/caching) manda.
+    // Standard: affinity (continuity/caching) rules.
     const aAff = affinity(a.provider);
     const bAff = affinity(b.provider);
     if (aAff !== bAff) return bAff - aAff;
@@ -960,8 +961,8 @@ function orderedCandidates(
 }
 
 /**
- * Mejor candidato del tier con auth configurada (previsualización).
- * El handler de before_agent_start itera TODA la lista como fallback real.
+ * Best candidate of the tier with configured auth (preview).
+ * The before_agent_start handler iterates the WHOLE list as a real fallback.
  */
 function pickModel(
   cfg: AutoModelConfig,
@@ -978,7 +979,7 @@ function pickModel(
 ): PickResult {
   const ordered = orderedCandidates(cfg, tier, ctx, applyAffinity, isHealthy);
   if (ordered.length === 0) {
-    return { model: null, reason: `tier "${tier}" sin modelos con provider habilitado` };
+    return { model: null, reason: `tier "${tier}" has no models with an enabled provider` };
   }
 
   const available = new Set(
@@ -987,29 +988,29 @@ function pickModel(
   for (const entry of ordered) {
     const m = ctx.modelRegistry.find(entry.provider, entry.model);
     if (!m) continue;
-    if (!available.has(`${entry.provider}/${entry.model}`)) continue; // sin auth
+    if (!available.has(`${entry.provider}/${entry.model}`)) continue; // no auth
     return { model: m, entry, reason: "ok" };
   }
   return {
     model: null,
-    reason: `tier "${tier}": sin candidatos autenticados entre: ${ordered
+    reason: `tier "${tier}": no authenticated candidates among: ${ordered
       .map((e) => `${e.provider}/${e.model}`)
       .join(", ")}`,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Estado del router
+// Router state
 // ---------------------------------------------------------------------------
 
 interface TurnTiming {
-  /** ms del scoring (señales + score + tier). */
+  /** ms of scoring (signals + score + tier). */
   scoringMs: number;
-  /** ms del ordenado de candidatos. */
+  /** ms of candidate ordering. */
   selectMs: number;
-  /** ms de pi.setModel (0 si ya estábamos en el modelo). */
+  /** ms of pi.setModel (0 if we were already on the model). */
   setModelMs: number;
-  /** ms totales del handler before_agent_start. */
+  /** total ms of the before_agent_start handler. */
   totalMs: number;
 }
 
@@ -1017,21 +1018,21 @@ interface LastDecision {
   tier: TierId;
   score: number;
   signals: ScoreSignals;
-  /** Señal con mayor contribución ponderada (explica el tier). */
+  /** Signal with the highest weighted contribution (explains the tier). */
   dominant: SignalKey;
   modelId: string;
   forced: boolean;
-  /** true si el turno fue en arranque en frío (sin historial → sin afinidad). */
+  /** true if the turn was a cold start (no history → no affinity). */
   coldStart: boolean;
-  /** % de contexto ocupado en el momento de la decisión (null si desconocido). */
+  /** % of context used at decision time (null if unknown). */
   contextPercent: number | null;
   timing: TurnTiming;
   timestamp: number;
 }
 
 // ---------------------------------------------------------------------------
-// Hooks de testing (exports extra: inofensivos para el loader de pi, que usa
-// el default export; permiten validar el scoring con `node --experimental-strip-types`)
+// Testing hooks (extra exports: harmless for the pi loader, which uses the
+// default export; they allow validating scoring with `node --experimental-strip-types`)
 // ---------------------------------------------------------------------------
 
 export const __test = {
@@ -1069,7 +1070,7 @@ export const __test = {
 };
 
 // ---------------------------------------------------------------------------
-// Extensión
+// Extension
 // ---------------------------------------------------------------------------
 
 export default function (pi: ExtensionAPI) {
@@ -1081,25 +1082,25 @@ export default function (pi: ExtensionAPI) {
   let lastWarned: string | null = null;
   let lastCwd: string | undefined;
 
-  /** Pin manual: modelo fijo que sobreescribe el routing (prioridad máxima). */
+  /** Manual pin: fixed model that overrides routing (maximum priority). */
   let pinnedModel: { provider: string; model: string } | null = null;
 
-  // --- Rescate a mitad de turno -------------------------------------------
+  // --- Mid-turn rescue ------------------------------------------------------
   let lastPrompt = "";
   let lastCandidates: ModelEntry[] = [];
-  let lastTurnLocked = true; // pin / bypass / sin decisión → sin rescate
-  let rescueBudget = 2; // reintentos máximos por prompt de usuario real
+  let lastTurnLocked = true; // pin / bypass / no decision → no rescue
+  let rescueBudget = 2; // max retries per real user prompt
   let rescueCount = 0;
 
-  // --- Histéresis anti-flip-flop ------------------------------------------
-  let activeTier: TierId | null = null; // tier anclado por el routing
-  let activeTierTurns = 0; // turnos rutados consecutivos en el tier anclado
+  // --- Anti-flip-flop hysteresis --------------------------------------------
+  let activeTier: TierId | null = null; // tier anchored by routing
+  let activeTierTurns = 0; // consecutive routed turns on the anchored tier
 
-  // --- Salud de providers ------------------------------------------------
+  // --- Provider health ------------------------------------------------------
   let health: HealthMap = {};
   let healthNotified = new Set<string>();
 
-  // --- Uso y coste ---------------------------------------------------------
+  // --- Usage and cost -------------------------------------------------------
   let usageAll: UsageMap = {};
   let usageSession: UsageMap = {};
   let budgetDay = { date: "", cost: 0 };
@@ -1114,7 +1115,7 @@ export default function (pi: ExtensionAPI) {
         }
       }
     } catch (err) {
-      console.error(`[auto-model-router] error leyendo ${BUDGET_FILE}:`, err);
+      console.error(`[auto-model-router] error reading ${BUDGET_FILE}:`, err);
     }
   };
 
@@ -1122,7 +1123,7 @@ export default function (pi: ExtensionAPI) {
     try {
       writeFileSync(BUDGET_FILE, JSON.stringify(budgetDay, null, 2), "utf-8");
     } catch (err) {
-      console.error(`[auto-model-router] error escribiendo ${BUDGET_FILE}:`, err);
+      console.error(`[auto-model-router] error writing ${BUDGET_FILE}:`, err);
     }
   };
 
@@ -1132,7 +1133,7 @@ export default function (pi: ExtensionAPI) {
     return total;
   };
 
-  // --- Calibración (señales implícitas del usuario) -----------------------
+  // --- Calibration (implicit user signals) --------------------------------
   let calibSamples: CalibrationSample[] = [];
 
   const loadSamples = (): CalibrationSample[] => {
@@ -1144,13 +1145,13 @@ export default function (pi: ExtensionAPI) {
           try {
             out.push(JSON.parse(line) as CalibrationSample);
           } catch {
-            // línea corrupta → ignorar
+            // corrupt line → ignore
           }
         }
         return out;
       }
     } catch (err) {
-      console.error(`[auto-model-router] error leyendo ${CALIB_LOG}:`, err);
+      console.error(`[auto-model-router] error reading ${CALIB_LOG}:`, err);
     }
     return [];
   };
@@ -1162,7 +1163,7 @@ export default function (pi: ExtensionAPI) {
     try {
       appendFileSync(CALIB_LOG, JSON.stringify(full) + "\n");
     } catch (err) {
-      console.error(`[auto-model-router] error escribiendo ${CALIB_LOG}:`, err);
+      console.error(`[auto-model-router] error writing ${CALIB_LOG}:`, err);
     }
   };
 
@@ -1173,7 +1174,7 @@ export default function (pi: ExtensionAPI) {
         return parsed && typeof parsed === "object" ? parsed : {};
       }
     } catch (err) {
-      console.error(`[auto-model-router] error leyendo ${USAGE_FILE}:`, err);
+      console.error(`[auto-model-router] error reading ${USAGE_FILE}:`, err);
     }
     return {};
   };
@@ -1182,7 +1183,7 @@ export default function (pi: ExtensionAPI) {
     try {
       writeFileSync(USAGE_FILE, JSON.stringify(u, null, 2), "utf-8");
     } catch (err) {
-      console.error(`[auto-model-router] error escribiendo ${USAGE_FILE}:`, err);
+      console.error(`[auto-model-router] error writing ${USAGE_FILE}:`, err);
     }
   };
 
@@ -1211,7 +1212,7 @@ export default function (pi: ExtensionAPI) {
     aggregateUsage(usageAll, provider, modelId, norm);
     saveUsage(usageAll);
 
-    // Contador diario de presupuesto
+    // Daily budget counter
     const dayKey = new Date().toISOString().slice(0, 10);
     if (budgetDay.date !== dayKey) {
       budgetDay = { date: dayKey, cost: 0 };
@@ -1232,7 +1233,7 @@ export default function (pi: ExtensionAPI) {
         return pruned;
       }
     } catch (err) {
-      console.error(`[auto-model-router] error leyendo ${HEALTH_FILE}:`, err);
+      console.error(`[auto-model-router] error reading ${HEALTH_FILE}:`, err);
     }
     return {};
   };
@@ -1241,7 +1242,7 @@ export default function (pi: ExtensionAPI) {
     try {
       writeFileSync(HEALTH_FILE, JSON.stringify(h, null, 2), "utf-8");
     } catch (err) {
-      console.error(`[auto-model-router] error escribiendo ${HEALTH_FILE}:`, err);
+      console.error(`[auto-model-router] error writing ${HEALTH_FILE}:`, err);
     }
   };
 
@@ -1265,7 +1266,7 @@ export default function (pi: ExtensionAPI) {
       healthNotified.add(`${provider}:${reason}`);
       const till = new Date(until).toLocaleTimeString();
       ctx.ui.notify(
-        `⚠️ Auto-model: provider "${provider}" degradado (${reason}) hasta ${till} — se saltará en el routing`,
+        `⚠️ Auto-model: provider "${provider}" degraded (${reason}) until ${till} — it will be skipped in routing`,
         "warning",
       );
     }
@@ -1274,22 +1275,22 @@ export default function (pi: ExtensionAPI) {
   const isHealthy = (provider: string) => isProviderHealthy(health, provider);
 
   /**
-   * pi.setModel con guarda defensiva: si el runtime de la extensión no está
-   * disponible (rechaza con "Extension runtime not initialized" en ventanas de
-   * arranque/reload/sesión reemplazada), degrada con elegancia en vez de
-   * propagar un error que rompa el turno.
+   * pi.setModel with a defensive guard: if the extension runtime is not
+   * available (it rejects with "Extension runtime not initialized" during
+   * startup/reload/replaced-session windows), degrade gracefully instead of
+   * propagating an error that would break the turn.
    */
   const safeSetModel = async (m: Model<any>): Promise<boolean> => {
     try {
       return await pi.setModel(m);
     } catch (err) {
-      console.error(`[auto-model-router] pi.setModel no disponible (${m.provider}/${m.id}):`, err);
+      console.error(`[auto-model-router] pi.setModel unavailable (${m.provider}/${m.id}):`, err);
       return false;
     }
   };
 
   // -----------------------------------------------------------------------
-  // message_end — registra uso/coste + detecta errores de provider
+  // message_end — records usage/cost + detects provider errors
   // -----------------------------------------------------------------------
   pi.on("message_end", async (event, ctx) => {
     const m = event.message as unknown as {
@@ -1309,13 +1310,13 @@ export default function (pi: ExtensionAPI) {
     };
     if (!m || m.role !== "assistant") return;
 
-    // Uso/coste de TODAS las respuestas (éxito o error)
+    // Usage/cost of ALL responses (success or error)
     if (m.usage) {
       const modelId = typeof m.model === "string" ? m.model : m.model?.id;
       if (m.provider && modelId) recordUsage(m.provider, modelId, m.usage);
     }
 
-    // Salud: solo errores clasificables
+    // Health: only classifiable errors
     if (m.stopReason !== "error" && !m.errorMessage) return;
     const provider = m.provider ?? ctx.model?.provider;
     if (!provider) return;
@@ -1323,9 +1324,9 @@ export default function (pi: ExtensionAPI) {
     if (!reason) return;
     degradeProvider(ctx, provider, reason, m.errorMessage ?? "");
 
-    // 🚑 Rescate a mitad de turno: error recuperable → siguiente candidato
-    // del tier (sano y habilitado) + reintento del mismo prompt. La salud ya
-    // degradó al provider fallido, así que el reintento no vuelve a él.
+    // 🚑 Mid-turn rescue: recoverable error → next candidate of the tier
+    // (healthy and enabled) + retry of the same prompt. Health already
+    // degraded the failed provider, so the retry does not go back to it.
     if (lastTurnLocked || rescueBudget <= 0 || !lastPrompt) return;
     const failedKey = usageKey(
       provider,
@@ -1346,13 +1347,13 @@ export default function (pi: ExtensionAPI) {
     rescueCount++;
     console.error(`[auto-model-router] RESCUE ${failedKey} (${reason}) -> ${nm.provider}/${nm.id}`);
     ctx.ui.notify(
-      `🚑 Rescate: ${failedKey} falló (${reason}) → reintentando con ${nm.provider}/${nm.id} (quedan ${rescueBudget} rescates)`,
+      `🚑 Rescue: ${failedKey} failed (${reason}) → retrying with ${nm.provider}/${nm.id} (${rescueBudget} rescues left)`,
       "warning",
     );
     try {
       pi.sendUserMessage(lastPrompt);
     } catch (err) {
-      console.error(`[auto-model-router] error en reintento de rescate:`, err);
+      console.error(`[auto-model-router] error during rescue retry:`, err);
     }
   });
 
@@ -1372,13 +1373,13 @@ export default function (pi: ExtensionAPI) {
   };
 
   // -------------------------------------------------------------------------
-  // input — maneja prefijos !! (bypass) y @@tier (fuerza nivel)
+  // input — handles !! (bypass) and @@tier (forced level) prefixes
   // -------------------------------------------------------------------------
   pi.on("input", async (event: InputEvent, _ctx) => {
     if (isSubagentProcess()) return { action: "continue" as const };
     if (event.source === "extension") return { action: "continue" as const };
     if (!enabled) return { action: "continue" as const };
-    // Nuevo input de usuario real → presupuesto de rescate renovado
+    // New real user input → rescue budget renewed
     rescueBudget = 2;
 
     let text = event.text.trimStart();
@@ -1406,16 +1407,16 @@ export default function (pi: ExtensionAPI) {
   });
 
   // -------------------------------------------------------------------------
-  // before_agent_start — clasifica y cambia de modelo si procede
+  // before_agent_start — classifies and switches model when appropriate
   // -------------------------------------------------------------------------
   pi.on("before_agent_start", async (event: BeforeAgentStartEvent, ctx) => {
     if (isSubagentProcess()) return;
     if (!enabled) return;
-    // Por defecto sin rescate (pin/bypass/sin decisión); el routing lo desbloquea
+    // No rescue by default (pin/bypass/no decision); routing unlocks it
     lastTurnLocked = true;
 
-    // 📌 Pin activo: el modelo pineado manda sobre todo el routing (auto,
-    // @@tier, presupuesto). Garantizamos que esté activo y salimos.
+    // 📌 Active pin: the pinned model outranks all routing (auto, @@tier,
+    // budget). Make sure it is active and exit.
     if (pinnedModel) {
       const m = ctx.modelRegistry.find(pinnedModel.provider, pinnedModel.model);
       const current = ctx.model;
@@ -1424,7 +1425,7 @@ export default function (pi: ExtensionAPI) {
         if (ok) {
           ctx.ui.notify(`📌 Pin: ${m.provider}/${m.id}`, "info");
         } else {
-          ctx.ui.notify(`❌ Pin: sin API key para ${m.provider}/${m.id}`, "error");
+          ctx.ui.notify(`❌ Pin: no API key for ${m.provider}/${m.id}`, "error");
         }
       }
       ctx.ui.setStatus("auto-model", `📌 ${pinnedModel.provider}/${pinnedModel.model}`);
@@ -1439,7 +1440,7 @@ export default function (pi: ExtensionAPI) {
     const prompt = event.prompt ?? "";
 
     if (willSkip) {
-      // Señal implícita: el usuario usó !! y saltó el routing en este prompt
+      // Implicit signal: the user used !! and skipped routing on this prompt
       try {
         const n = classifyPrompt(prompt);
         logSample({
@@ -1450,7 +1451,7 @@ export default function (pi: ExtensionAPI) {
           excerpt: prompt.slice(0, 60),
         });
       } catch {
-        // no crítico
+        // not critical
       }
       return;
     }
@@ -1473,7 +1474,7 @@ export default function (pi: ExtensionAPI) {
     let hystBlocked = false;
     if (force) {
       tier = force;
-      // Señal implícita: usuario forzó un nivel distinto al natural del router
+      // Implicit signal: the user forced a level different from the router's natural one
       const natural = resolveTier(
         score,
         signals,
@@ -1493,7 +1494,7 @@ export default function (pi: ExtensionAPI) {
     } else {
       const quickIntent = SHORT_OUTPUT_RE.test(prompt);
       tier = resolveTier(score, signals, quickIntent, cfg.scoring.thresholds);
-      // Histéresis anti-flip-flop: bloquea bajadas prematuras
+      // Anti-flip-flop hysteresis: blocks premature downgrades
       const hyst = hysteresisTier(
         tier,
         activeTier,
@@ -1506,14 +1507,14 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
-    // Presupuesto: techo duro si se superó el límite de sesión o día
+    // Budget: hard cap when the session or day limit was exceeded
     const clamp = clampTierToBudget(tier, cfg, sessionCost(), budgetDay.cost);
     if (clamp.over) {
       const key = clamp.reason ?? "session";
       if (!budgetNotified[key]) {
         budgetNotified[key] = true;
         ctx.ui.notify(
-          `💸 Presupuesto de ${clamp.reason} superado — techo en [${cfg.budget.capTier}]` +
+          `💸 ${clamp.reason} budget exceeded — capped at [${cfg.budget.capTier}]` +
             (clamp.clamped ? ` (${tier} → ${clamp.tier})` : ""),
           "warning",
         );
@@ -1522,16 +1523,16 @@ export default function (pi: ExtensionAPI) {
     }
     const t1 = performance.now();
 
-    // Iteramos TODA la lista del tier: si setModel falla (sin auth, modelo
-    // no disponible), caemos al siguiente candidato hasta encontrar uno.
-    // En arranque en frío (primer turno, sin historial) la afinidad se omite.
+    // We iterate the WHOLE tier list: if setModel fails (no auth, model
+    // unavailable), we fall through to the next candidate until one works.
+    // On cold start (first turn, no history) affinity is omitted.
     const applyAffinity = hasAssistantHistory(ctx.sessionManager);
     const candidates = orderedCandidates(cfg, tier, ctx, applyAffinity, isHealthy);
     if (candidates.length === 0) {
-      warn(ctx, `tier "${tier}" sin modelos con provider habilitado`);
+      warn(ctx, `tier "${tier}" has no models with an enabled provider`);
       return;
     }
-    // Estado para el rescate a mitad de turno
+    // State for the mid-turn rescue
     lastPrompt = prompt;
     lastCandidates = candidates;
     lastTurnLocked = false;
@@ -1543,7 +1544,7 @@ export default function (pi: ExtensionAPI) {
       const m = ctx.modelRegistry.find(entry.provider, entry.model);
       if (!m) continue;
 
-      // Ya estamos en el modelo adecuado → refrescar status y listo
+      // We are already on the right model → refresh status and done
       if (current && current.provider === m.provider && current.id === m.id) {
         chosen = { model: m, entry };
         break;
@@ -1559,7 +1560,7 @@ export default function (pi: ExtensionAPI) {
     if (!chosen) {
       warn(
         ctx,
-        `tier "${tier}": no se pudo activar ningún candidato (${candidates
+        `tier "${tier}": could not activate any candidate (${candidates
           .map((e) => e.provider + "/" + e.model)
           .join(", ")})`,
       );
@@ -1573,13 +1574,13 @@ export default function (pi: ExtensionAPI) {
       try {
         pi.setThinkingLevel(entry.thinking);
       } catch {
-        // el nivel se clampa solo; no es crítico
+        // the level clamps itself; not critical
       }
     }
 
     const totalMs = t3 - t0;
-    // Ancla de histéresis: mismo tier → +1 turno; cambio (subida/bajada
-    // permitida/techo de presupuesto) → nuevo ancla
+    // Hysteresis anchor: same tier → +1 turn; change (upgrade/allowed
+    // downgrade/budget cap) → new anchor
     if (tier === activeTier) {
       activeTierTurns++;
     } else {
@@ -1606,7 +1607,7 @@ export default function (pi: ExtensionAPI) {
 
     const hystNote =
       hystBlocked && activeTier
-        ? ` · 🧲 histéresis (bajada bloqueada ${activeTierTurns}/${cfg.hysteresis.minDowngradeTurns})`
+        ? ` · 🧲 hysteresis (downgrade blocked ${activeTierTurns}/${cfg.hysteresis.minDowngradeTurns})`
         : "";
     ctx.ui.notify(
       `${force ? "🎯" : "🔀"} [${tier}] ${model.provider}/${model.id} (score ${score.toFixed(2)} · ${SIGNAL_ICONS[dominant]} ${dominant})${hystNote}`,
@@ -1616,7 +1617,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   // -------------------------------------------------------------------------
-  // model_select — mantener status bar sincronizada
+  // model_select — keep the status bar in sync
   // -------------------------------------------------------------------------
   pi.on("model_select", (event, ctx) => {
     if (pinnedModel) {
@@ -1627,7 +1628,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   // -------------------------------------------------------------------------
-  // session_start — estado inicial
+  // session_start — initial state
   // -------------------------------------------------------------------------
   pi.on("session_start", (_event, ctx) => {
     if (isSubagentProcess()) return;
@@ -1648,25 +1649,25 @@ export default function (pi: ExtensionAPI) {
     const degraded = Object.entries(health).filter(([, h]) => h.degradedUntil > Date.now());
     if (degraded.length > 0) {
       ctx.ui.notify(
-        `⚠️ Providers degradados: ${degraded
-          .map(([p, h]) => `${p} (${h.reason}, hasta ${new Date(h.degradedUntil).toLocaleTimeString()})`)
+        `⚠️ Degraded providers: ${degraded
+          .map(([p, h]) => `${p} (${h.reason}, until ${new Date(h.degradedUntil).toLocaleTimeString()})`)
           .join(", ")}`,
         "warning",
       );
     }
     ctx.ui.setStatus("auto-model", enabled ? "🔀 auto-model" : "⏸ auto-model");
     ctx.ui.notify(
-      `🔀 Auto Model Router ${enabled ? "activo" : "inactivo"} — ${cfg.tiers["sota+"].length}+${cfg.tiers.sota.length}+${cfg.tiers["workhorses+"].length}+${cfg.tiers.workhorses.length}+${cfg.tiers["lightweights+"].length}+${cfg.tiers.lightweights.length} modelos en ${TIER_ORDER.length} tiers. "!!" omite, "@@tier" fuerza.`,
+      `🔀 Auto Model Router ${enabled ? "active" : "inactive"} — ${cfg.tiers["sota+"].length}+${cfg.tiers.sota.length}+${cfg.tiers["workhorses+"].length}+${cfg.tiers.workhorses.length}+${cfg.tiers["lightweights+"].length}+${cfg.tiers.lightweights.length} models across ${TIER_ORDER.length} tiers. "!!" bypasses, "@@tier" forces.`,
       "info",
     );
   });
 
   // -------------------------------------------------------------------------
-  // Comando: /auto-model
+  // Command: /auto-model
   // -------------------------------------------------------------------------
   pi.registerCommand("auto-model", {
     description:
-      "Auto model router: estado/scoring, on|off, reload, config, score <texto>",
+      "Auto model router: status/scoring, on|off, reload, config, score <text>",
     handler: async (args: string, ctx) => {
       const cmd = (args || "").trim().split(/\s+/)[0] || "";
       const rest = (args || "").trim().slice(cmd.length).trim();
@@ -1674,25 +1675,25 @@ export default function (pi: ExtensionAPI) {
       switch (cmd) {
         case "on":
           enabled = true;
-          ctx.ui.notify("🔀 Auto Model Router activado", "info");
+          ctx.ui.notify("🔀 Auto Model Router enabled", "info");
           break;
         case "off":
           enabled = false;
-          ctx.ui.notify("⏸ Auto Model Router desactivado", "info");
+          ctx.ui.notify("⏸ Auto Model Router disabled", "info");
           break;
         case "reload":
           cfg = loadConfig(lastCwd);
           enabled = cfg.enabled;
-          ctx.ui.notify(`♻️ Configuración recargada (enabled=${cfg.enabled})`, "info");
+          ctx.ui.notify(`♻️ Configuration reloaded (enabled=${cfg.enabled})`, "info");
           break;
         case "config": {
           const projectPath = lastCwd ? join(lastCwd, ".pi", "auto-model.json") : null;
           const lines = [
-            `Config global: ${CONFIG_PATH}`,
+            `Global config: ${CONFIG_PATH}`,
             projectPath
-              ? `Config proyecto: ${projectPath}${existsSync(projectPath) ? " (activa)" : " (no existe — solo global)"}`
-              : "Config proyecto: (sin cwd)",
-            `Providers activos: ${Object.entries(cfg.providers)
+              ? `Project config: ${projectPath}${existsSync(projectPath) ? " (active)" : " (does not exist — global only)"}`
+              : "Project config: (no cwd)",
+            `Active providers: ${Object.entries(cfg.providers)
               .filter(([, p]) => p.enabled)
               .map(([k]) => k)
               .join(", ")}`,
@@ -1715,7 +1716,7 @@ export default function (pi: ExtensionAPI) {
         }
         case "score": {
           if (!rest) {
-            ctx.ui.notify("Uso: /auto-model score <texto a evaluar>", "warning");
+            ctx.ui.notify("Usage: /auto-model score <text to evaluate>", "warning");
             break;
           }
           const signals = computeSignals(rest, 0, undefined, undefined, 0, 0);
@@ -1729,7 +1730,7 @@ export default function (pi: ExtensionAPI) {
             .map(([k, v]) => `${k}=${v.toFixed(2)}${k === dominant ? " ←" : ""}`)
             .join(" ");
           ctx.ui.notify(
-            `🧪 score=${score.toFixed(3)} → tier [${tier}] · ${SIGNAL_ICONS[dominant]} ${dominant}${clamp.over ? " · 💸 presupuesto superado" : ""}\n${parts}\n→ ${picked.model ? `${picked.model.provider}/${picked.model.id}` : picked.reason}`,
+            `🧪 score=${score.toFixed(3)} → tier [${tier}] · ${SIGNAL_ICONS[dominant]} ${dominant}${clamp.over ? " · 💸 budget exceeded" : ""}\n${parts}\n→ ${picked.model ? `${picked.model.provider}/${picked.model.id}` : picked.reason}`,
             "info",
           );
           break;
@@ -1738,8 +1739,8 @@ export default function (pi: ExtensionAPI) {
           const cur = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "—";
           if (!lastDecision) {
             ctx.ui.notify(
-              `🔍 debug: sin decisión registrada todavía — envía un prompt y repite.
-Modelo actual: ${cur} · enabled: ${enabled} · config: ${CONFIG_PATH}`,
+              `🔍 debug: no decision recorded yet — send a prompt and repeat.
+Current model: ${cur} · enabled: ${enabled} · config: ${CONFIG_PATH}`,
               "info",
             );
             break;
@@ -1748,18 +1749,18 @@ Modelo actual: ${cur} · enabled: ${enabled} · config: ${CONFIG_PATH}`,
           const d = lastDecision.dominant;
           const ctxInfo =
             lastDecision.contextPercent === null
-              ? "desconocido"
+              ? "unknown"
               : `${(lastDecision.contextPercent * 100).toFixed(0)}%`;
           ctx.ui.notify(
-            `🔍 debug — última decisión\n` +
-              `tier: [${lastDecision.tier}]${lastDecision.forced ? " (forzado)" : ""} · score ${lastDecision.score.toFixed(3)} · ${SIGNAL_ICONS[d]} ${d}\n` +
-              `modelo: ${lastDecision.modelId}\n` +
+            `🔍 debug — last decision\n` +
+              `tier: [${lastDecision.tier}]${lastDecision.forced ? " (forced)" : ""} · score ${lastDecision.score.toFixed(3)} · ${SIGNAL_ICONS[d]} ${d}\n` +
+              `model: ${lastDecision.modelId}\n` +
               `⏱️  scoring ${t.scoringMs.toFixed(1)}ms · select ${t.selectMs.toFixed(1)}ms · setModel ${t.setModelMs.toFixed(1)}ms · total ${t.totalMs.toFixed(1)}ms\n` +
-              `🧊 cold-start: ${lastDecision.coldStart ? "sí (sin afinidad)" : "no (afinidad activa)"} · ctx ${ctxInfo} · 🚑 ${rescueCount} rescates · 🧲 ancla [${activeTier ?? "—"}] ${activeTierTurns}t\n` +
-              `señales: ${Object.entries(lastDecision.signals)
+              `🧊 cold start: ${lastDecision.coldStart ? "yes (no affinity)" : "no (affinity active)"} · ctx ${ctxInfo} · 🚑 ${rescueCount} rescues · 🧲 anchor [${activeTier ?? "—"}] ${activeTierTurns}t\n` +
+              `signals: ${Object.entries(lastDecision.signals)
                 .map(([k, v]) => `${k}=${v.toFixed(2)}${k === d ? " ←" : ""}`)
                 .join(" ")}\n` +
-              `modelo actual: ${cur} · enabled: ${enabled} · config: ${CONFIG_PATH}`,
+              `current model: ${cur} · enabled: ${enabled} · config: ${CONFIG_PATH}`,
             "info",
           );
           break;
@@ -1771,20 +1772,20 @@ Modelo actual: ${cur} · enabled: ${enabled} · config: ${CONFIG_PATH}`,
             health = {};
             saveHealth(health);
             healthNotified = new Set();
-            ctx.ui.notify("♻️ Salud de providers reiniciada", "info");
+            ctx.ui.notify("♻️ Provider health reset", "info");
             break;
           }
           if (degraded.length === 0) {
-            ctx.ui.notify("✅ Salud de providers: todos operativos", "info");
+            ctx.ui.notify("✅ Provider health: all operational", "info");
             break;
           }
           ctx.ui.notify(
-            `🩺 Providers degradados:\n${degraded
+            `🩺 Degraded providers:\n${degraded
               .map(
                 ([p, h]) =>
-                  `${p}: ${h.reason} (hits ${h.hits}, hasta ${new Date(h.degradedUntil).toLocaleTimeString()}) — ${h.lastError.slice(0, 120)}`,
+                  `${p}: ${h.reason} (hits ${h.hits}, until ${new Date(h.degradedUntil).toLocaleTimeString()}) — ${h.lastError.slice(0, 120)}`,
               )
-              .join("\n")}\n/auto-model health clear para reiniciar`,
+              .join("\n")}\n/auto-model health clear to reset`,
             "warning",
           );
           break;
@@ -1795,39 +1796,39 @@ Modelo actual: ${cur} · enabled: ${enabled} · config: ${CONFIG_PATH}`,
             try {
               writeFileSync(CALIB_LOG, "", "utf-8");
             } catch (err) {
-              console.error(`[auto-model-router] error limpiando ${CALIB_LOG}:`, err);
+              console.error(`[auto-model-router] error clearing ${CALIB_LOG}:`, err);
             }
-            ctx.ui.notify("🧮 Historial de calibración reiniciado", "info");
+            ctx.ui.notify("🧮 Calibration history reset", "info");
             break;
           }
           const report = analyzeCalibration(calibSamples, cfg);
           if (report.total === 0) {
             ctx.ui.notify(
-              `🧮 Calibración: sin señales todavía. Usa @@tier cuando el router falle el nivel (y !! para saltarlo) — se recolectan en ${CALIB_LOG}`,
+              `🧮 Calibration: no signals yet. Use @@tier when the router misses the level (and !! to bypass it) — they are collected in ${CALIB_LOG}`,
               "info",
             );
             break;
           }
           const lines: string[] = [
-            `🧮 Calibración — ${report.total} señales (${report.overrides} overrides · ${report.bypasses} bypass)`,
-            `  Bajo-tiros (pediste más capacidad): ${report.under} · Sobre-tiros: ${report.over}`,
+            `🧮 Calibration — ${report.total} signals (${report.overrides} overrides · ${report.bypasses} bypass)`,
+            `  Undershoots (you asked for more capability): ${report.under} · Overshoots: ${report.over}`,
           ];
           const sig = Object.entries(report.perSignal)
             .filter(([, v]) => v.under + v.over > 0)
             .map(([k, v]) => `  ${SIGNAL_ICONS[k as SignalKey]} ${k}: ↓${v.under} ↑${v.over}`);
-          if (sig.length > 0) lines.push(`  Por señal dominante:\n${sig.join("\n")}`);
+          if (sig.length > 0) lines.push(`  By dominant signal:\n${sig.join("\n")}`);
           if (report.weightSuggestions.length > 0) {
-            lines.push(`  Sugerencias de pesos (sin aplicar):`);
+            lines.push(`  Weight suggestions (not applied):`);
             for (const w of report.weightSuggestions) {
               lines.push(
                 `    ${SIGNAL_ICONS[w.signal]} ${w.signal}: ${w.from} → ${w.to} (Δ${w.delta > 0 ? "+" : ""}${w.delta})`,
               );
             }
           } else {
-            lines.push(`  Pesos: sin sugerencias (señales equilibradas)`);
+            lines.push(`  Weights: no suggestions (balanced signals)`);
           }
           for (const h of report.boundaryHints) lines.push(`  ⚠️ ${h}`);
-          lines.push(`  (copia los Δ a scoring.weights o /auto-model calibrate clear para reiniciar)`);
+          lines.push(`  (copy the Δs to scoring.weights, or /auto-model calibrate clear to reset)`);
           ctx.ui.notify(lines.join("\n"), "info");
           break;
         }

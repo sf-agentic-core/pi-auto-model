@@ -1,170 +1,159 @@
 # 🔀 Auto Model Router v2
 
-Extensión global de pi que selecciona automáticamente el modelo más apropiado para
-cada tarea, sin cambiar de modelo manualmente entre prompts.
+Global pi extension that automatically selects the most appropriate model for each task,
+without manually switching models between prompts.
 
-## Taxonomía de niveles
+## Tier Taxonomy
 
-| Tier            | Perfil                              | Ejemplos (default)                            |
+| Tier            | Profile                             | Examples (default)                            |
 |-----------------|-------------------------------------|-----------------------------------------------|
-| `sota+`         | Frontera, razonamiento profundo     | claude-fable-5, claude-opus-4-8, gemini-3.1-pro-preview |
-| `sota`          | Tareas complejas de alta calidad    | claude-sonnet-5, gemini-3-pro-preview, gpt-5.5 |
-| `workhorses+`   | Trabajo de ingeniería pesado        | claude-sonnet-4-6, gemini-2.5-pro, gpt-5.3-codex, glm-5p2 |
-| `workhorses`    | Desarrollo y debugging habitual     | claude-sonnet-4-5, gemini-3.5-flash, deepseek-v4-pro, kimi-k2p7-code |
-| `lightweights+` | Tareas medianas de bajo coste       | claude-haiku-4-5, gemini-3-flash-preview, gpt-5.4-mini |
-| `lightweights`  | Triviales (chat, listas, one-liners)| gemini-2.5-flash, gpt-5-mini, gpt-oss-20b |
+| `sota+`         | Frontier, deep reasoning            | claude-fable-5, claude-opus-4-8, gemini-3.1-pro-preview |
+| `sota`          | Complex high-quality tasks          | claude-sonnet-5, gemini-3-pro-preview, gpt-5.5 |
+| `workhorses+`   | Heavy engineering work              | claude-sonnet-4-6, gemini-2.5-pro, gpt-5.3-codex, glm-5p2 |
+| `workhorses`    | General development and debugging  | claude-sonnet-4-5, gemini-3.5-flash, deepseek-v4-pro, kimi-k2p7-code |
+| `lightweights+` | Medium low-cost tasks               | claude-haiku-4-5, gemini-3-flash-preview, gpt-5.4-mini |
+| `lightweights`  | Trivial (chat, lists, one-liners)   | gemini-2.5-flash, gpt-5-mini, gpt-oss-20b |
 
-Cada tier es una **lista ordenada de candidatos** `{provider, model}`. La extensión
-**permuta solo sobre los providers habilitados** en la configuración: si un provider
-está deshabilitado, sus modelos se descartan aunque estén listados.
+Each tier is an **ordered list of candidates** `{provider, model}`. The extension
+**permutates only over enabled providers** in the configuration: if a provider
+is disabled, its models are discarded even if listed.
 
-## Scoring multicomponente (no trivial)
+## Multi-component Scoring (Non-trivial)
 
-El nivel NO se decide por longitud del prompt. Se calcula un score ponderado 0..1 a
-partir de 6 señales independientes:
+The tier is NOT decided by prompt length. A weighted score 0..1 is calculated
+from 6 independent signals:
 
-| Señal         | Peso | Qué mide                                                                 |
-|---------------|------|--------------------------------------------------------------------------|
-| `structure`   | 0.15 | Tamaño estimado en tokens + imágenes adjuntas                            |
-| `context`     | 0.18 | Presión del contexto de la sesión (`ctx.getContextUsage()`)              |
-| `code`        | 0.22 | Densidad de código: bloques ```, diffs, rutas de archivo, verbos técnicos |
-| `agentic`     | 0.15 | Profundidad agéntica: tools activas, skills, contextFiles, multi-paso    |
-| `criticality` | 0.20 | Riesgo: producción, deploy, migración, seguridad, dinero, datos          |
-| `output`      | 0.10 | Formato esperado: informe largo vs. una línea                            |
+| Signal        | Weight | What it measures                                                         |
+|---------------|--------|--------------------------------------------------------------------------|
+| `structure`   | 0.15   | Estimated size in tokens + attached images                               |
+| `context`     | 0.18   | Session context pressure (`ctx.getContextUsage()`)                       |
+| `code`        | 0.22   | Code density: ``` blocks, diffs, file paths, technical verbs             |
+| `agentic`     | 0.15   | Agentic depth: active tools, skills, contextFiles, multi-step indicators |
+| `criticality` | 0.20   | Risk: production, deploy, migration, security, money, data               |
+| `output`      | 0.10   | Expected format: long report vs. single line                             |
 
-Reglas de piso/techo coherentes:
-- **Criticality ≥ 0.7** → piso en `sota` (seguridad manda: un cambio de producción
-  "rápido" sigue mereciendo un modelo serio).
-- **Intención explícita de rapidez** (`rápido`, `en una línea`, `tl;dr`…) → techo en
-  `workhorses` (no gastar SOTA en trivialidades).
-- El piso de criticality **gana** al techo de rapidez.
+Consistent floor/ceiling rules:
+- **Criticality ≥ 0.7** → floor at `sota` (security overrides: a "quick" production change
+  still deserves a serious model).
+- **Explicit quick intent** (`quick`, `in one line`, `tl;dr`…) → ceiling at
+  `workhorses` (do not waste SOTA on trivialities).
+- The criticality floor **wins** over the quick intent ceiling.
 
-## Selección dentro del tier
+## Selection Within Tiers
 
-1. Se filtran los candidatos por **providers habilitados**.
-2. **Prioridad del provider**: la prioridad efectiva de cada provider es la del
-   mapa `tierProviderPriorities[tier]` si existe (por provider, con fallback a
-   la general para los no listados), o la `priority` general de `providers` si
-   el tier no tiene mapa específico.
-3. **Afinidad del provider** (desempate): si el modelo actual pertenece a un
-   provider de este tier, se prefiere ese candidato (continuidad de provider →
-   mejor prompt caching). OJO: si el tier tiene `tierProviderPriorities`
-   explícito, la prioridad específica MANDA y la afinidad solo desempata.
-4. **Orden de lista** como último criterio.
+1. Candidates are filtered by **enabled providers**.
+2. **Provider priority**: the effective priority of each provider is the one from the
+   `tierProviderPriorities[tier]` map if it exists (per provider, falling back to
+   the general priority for unlisted ones), or the general `priority` of `providers`
+   if the tier does not have a specific map.
+3. **Provider affinity** (tie-breaker): if the current model belongs to a provider
+   in this tier, that candidate is preferred (provider continuity → better prompt caching).
+   NOTE: if the tier has an explicit `tierProviderPriorities`, the specific priority
+   takes precedence and affinity only acts as a tie-breaker.
+4. **List order** as the final tie-breaker.
 
-`pi.setModel()` falla silenciosamente si no hay API key → se intenta el siguiente
-candidato. Si ninguno es usable, se mantiene el modelo actual (no se rompe nada).
-Además, `pickModel` prefiltra por providers con auth configurada
-(`modelRegistry.getAvailable()`), así que un provider habilitado en la config pero
-sin key en el box nunca bloquea el routing.
+`pi.setModel()` fails silently if no API key is set → the next candidate is tried.
+If none is usable, the current model is kept (nothing breaks).
+Additionally, `pickModel` pre-filters by providers with configured auth
+(`modelRegistry.getAvailable()`), so an enabled provider in config without a key
+in the keychain never blocks routing.
 
-## Uso — dónde y cómo se usa cada control
+## Usage — Where and how to use each control
 
-> **Importante:** los controles de la extensión solo existen si la extensión está
-> cargada. Tras instalar o actualizar la extensión, ejecuta **`/reload`** en la
-> sesión de pi (o reinicia pi) para que se cargue y aparezca `/auto-model` en el
-> autocompletado de comandos.
+> **Important:** The extension controls only exist if the extension is loaded.
+> After installing or updating the extension, run **`/reload`** in your pi session
+> (or restart pi) so it loads and `/auto-model` appears in the command autocomplete.
 
-### 🖱️ Slash commands (se escriben en la barra de input de pi, con autocompletado)
+### 🖱️ Slash commands (typed in the normal pi input bar, with autocomplete)
 
-| Comando | Dónde/Qué hace |
+| Command | Where/What it does |
 |---|---|
-| `/auto-model` | Estado: ON/OFF, modelo actual, último tier + desglose de scoring |
-| `/auto-model on` | Activa el routing automático (solo esta sesión) |
-| `/auto-model off` | Desactiva el routing (solo esta sesión) — eliges el modelo a mano |
-| `/auto-model reload` | Recarga `~/.pi/agent/auto-model.json` desde disco sin reiniciar |
-| `/auto-model config` | Muestra providers activos, tiers efectivos y prioridades por tier |
-| `/auto-model score <texto>` | Simula el scoring con un texto de ejemplo → tier + modelo (sin enviar nada) |
-| `/auto-model debug` | Diagnóstico de la última decisión: timing del router (scoring/select/setModel/total en ms), arranque en frío sí/no, % de contexto ocupado, señales (la dominante marcada con ←), ruta de config |
-| `/auto-model health` | Estado de salud de los providers; `/auto-model health clear` reinicia la salud |
-| `/auto-model usage` | Dashboard de uso y coste (total/tier/top modelos + sesión actual); `/auto-model usage clear` reinicia |
-| `/auto-model pin <provider/model>` | Fija un modelo manualmente (bloquea el router hasta `/auto-model unpin`) |
-| `/auto-model unpin` | Retira el pin y el router reanuda su selección |
-| `/model` | Comando nativo de pi: selector interactivo para cambiar de modelo a mano |
+| `/auto-model` | Status: ON/OFF, current model, last tier + scoring breakdown |
+| `/auto-model on` | Enables automatic routing (this session only) |
+| `/auto-model off` | Disables routing (this session only) — choose models manually |
+| `/auto-model reload` | Reloads `~/.pi/agent/auto-model.json` from disk without restarting |
+| `/auto-model config` | Shows active providers, effective tiers, and priorities per tier |
+| `/auto-model score <text>` | Simulates scoring with sample text → tier + model (without sending anything) |
+| `/auto-model debug` | Diagnostics of the last decision: router timing (scoring/select/setModel/total in ms), cold start yes/no, % context usage, signals (dominant marked with ←), config path |
+| `/auto-model health` | Health status of providers; `/auto-model health clear` resets health tracking |
+| `/auto-model usage` | Usage and cost dashboard (total/tier/top models + current session); `/auto-model usage clear` resets it |
+| `/auto-model pin <provider/model>` | Manually pins a model (blocks the router until `/auto-model unpin`) |
+| `/auto-model unpin` | Unpins the model and resumes automatic routing |
+| `/model` | Native pi command: interactive selector to manually change the model |
 
-### ⌨️ Prefijos de prompt (se escriben al inicio de un mensaje NORMAL, no con `/`)
+### ⌨️ Prompt prefixes (typed at the very beginning of a NORMAL message, not with `/`)
 
-| Prefijo | Ejemplo | Qué hace |
+| Prefix | Example | What it does |
 |---|---|---|
-| `!!` | `!! explícame X` | Omite el router **este turno** — pi usa el modelo activo |
-| `@@tier` | `@@sota+ diseña la arquitectura` | Fuerza un nivel concreto este turno (`@@sota`, `@@workhorses+`, `@@lightweights`, …) |
+| `!!` | `!! explain X` | Bypasses the router **for this turn** — pi uses the active model |
+| `@@tier` | `@@sota design the architecture` | Forces a specific tier for this turn (`@@sota`, `@@workhorses+`, `@@lightweights`, …) |
 
-Estos prefijos se procesan en el evento `input` de la extensión y se eliminan del
-prompt antes de llegar al modelo.
+These prefixes are processed in the extension's `input` event and stripped from the prompt before it is sent to the model.
 
-### 🎛️ Otras vías
+### 🎛️ Other ways
 
-| Vía | Qué hace |
+| Way | What it does |
 |---|---|
-| `Ctrl+P` | Cicla modelos en la sesión (puedes limitar el ciclo con `enabledModels` en settings.json) |
-| `pi --model provider/model` | Modelo inicial al arrancar pi |
-| `~/.pi/agent/auto-model.json` → `"enabled"` | ON/OFF persistente entre sesiones (se carga en cada `session_start`) |
+| `Ctrl+P` | Cycles models in the session (you can limit the cycle with `enabledModels` in settings.json) |
+| `pi --model provider/model` | Initial model when launching pi |
+| `~/.pi/agent/auto-model.json` → `"enabled"` | Persistent ON/OFF between sessions (loaded at every `session_start`) |
 
-### 🔁 Cómo alternar entre auto y manual
+### 🔁 Switching between auto and manual
 
 ```
-Auto ──(!! prompt)──────────► un turno manual
-Auto ──(/auto-model off)────► manual indefinido ──(/auto-model on)──► Auto
-Auto ──(@@sota prompt)──────► un turno forzado a ese nivel
+Auto ──(!! prompt)──────────► single manual turn
+Auto ──(/auto-model off)────► manual indefinitely ──(/auto-model on)──► Auto
+Auto ──(@@sota prompt)──────► single turn forced to that tier
 Manual ──(enabled:true + /auto-model reload)──► Auto
 ```
 
-**Ojo:** con el router ON, si cambias de modelo a mano (`/model` o `Ctrl+P`), en el
-siguiente prompt sin `!!` el router reevalúa y puede volver a su elección. Para
-mantener un modelo manual durante varios turnos: `/auto-model off` → eliges →
-terminas → `/auto-model on`.
+**Note:** With the router ON, if you manually change the model (`/model` or `Ctrl+P`),
+on the next prompt without `!!` the router will re-evaluate and might switch back.
+To keep a manual model for several turns: `/auto-model off` → select model → finish work → `/auto-model on`.
 
-El estado se refleja en el status bar de pi: **`🔀`** = routing activo, **`⏸`** = parado.
+Status is displayed in pi's status bar: **`🔀`** = active routing, **`⏸`** = paused.
 
-Cada notificación de routing incluye la **señal dominante** — la que más contribución
-ponderada aportó al score (`🚨 criticality`, `💻 code`, `🧮 context`, …):
-`🔀 [sota] github-copilot/gpt-5.6-terra (score 0.66 · 🚨 criticality)`. Así la
-decisión del tier deja de ser una caja negra.
+Each routing notification includes the **dominant signal** — the one that contributed
+the most weighted value to the score (`🚨 criticality`, `💻 code`, `🧮 context`, …):
+`🔀 [sota] github-copilot/gpt-5.6-terra (score 0.66 · 🚨 criticality)`. This makes
+the tier decision transparent.
 
-El comando `/auto-model` (sin argumentos) muestra el timing de la última decisión;
-`/auto-model debug` añade el detalle completo. El router en sí tarda <1ms en el
-scoring y milisegundos en `setModel` — si notas segundos entre la notificación de
-`session_start` y la de routing, es la preparación de arranque de pi (descubrimiento
-de recursos, system prompt) en el primer turno, no el router.
+The `/auto-model` command (without arguments) shows the timing of the last decision;
+`/auto-model debug` adds the full detail. The router itself takes <1ms for scoring
+and milliseconds for `setModel` — if you notice seconds of delay between the
+`session_start` notification and the routing notification, it is pi's startup overhead
+(resource discovery, system prompt preparation) on the first turn, not the router.
 
-### 🩺 Salud de providers (detección de fallos)
+### 🩺 Provider Health (failover detection)
 
-El router monitoriza errores de provider en `message_end` y los **degrada con
-cooldown**: un provider con fallos se excluye del routing hasta que el cooldown
-expira, y se recupera solo. Clasificación de errores y cooldowns (configurables en
-`health.cooldownMs`):
+The router monitors provider errors during `message_end` and **degrades them with a cooldown**:
+a failing provider is excluded from routing until its cooldown expires, recovery is automatic.
+Classification of errors and cooldowns (configurable in `health.cooldownMs`):
 
-| Categoría | Ejemplos | Cooldown por defecto |
+| Category | Examples | Default Cooldown |
 |---|---|---|
-| `auth` | 401/403, API key inválida, servicio deshabilitado | 1h |
-| `rate-limit` | 429, quota, too many requests | 10 min |
-| `server` | 502/503, overloaded | 2 min |
-| `network` | timeout, ECONNREFUSED, fetch failed | 2 min |
+| `auth` | 401/403, invalid API key, service disabled | 1 hour |
+| `rate-limit` | 429, quota exceeded, too many requests | 10 minutes |
+| `server` | 502/503, overloaded | 2 minutes |
+| `network` | timeout, ECONNREFUSED, fetch failed | 2 minutes |
 
-Los errores de **contexto** (`context_length_exceeded`) NO degradan al provider
-(pi los gestiona con compactación). El estado se persiste en
-`~/.pi/agent/auto-model-health.json` (sobrevive a reinicios) y se muestra en la
-notificación de `session_start`, en `/auto-model` y en `/auto-model health`.
+**Context** errors (`context_length_exceeded`) do NOT degrade the provider (pi handles them with compaction).
+The health state is persisted in `~/.pi/agent/auto-model-health.json` (survives restarts) and is shown in the `session_start` notification, `/auto-model`, and `/auto-model health`.
 
-### 📊 Uso y coste
+### 📊 Usage and Cost
 
-Cada respuesta de assistant registra tokens y coste real (calculado por pi con los
-precios del catálogo) en `~/.pi/agent/auto-model-usage.json`, acumulado por modelo.
-`/auto-model usage` muestra:
+Each assistant response logs actual tokens and cost (calculated by pi using catalog prices) in `~/.pi/agent/auto-model-usage.json`, aggregated per model. `/auto-model usage` shows:
 
-- **Total** (todo el tiempo): coste, tokens y llamadas.
-- **Por tier**: cuántas llamadas y coste por nivel (`sota+`…`lightweights`).
-- **Top modelos**: los 5 que más coste acumulan.
-- **Sesión actual**: solo esta sesión de pi.
+- **Total** (all-time): cost, tokens, and calls.
+- **Per tier**: how many calls and cost per level (`sota+`…`lightweights`).
+- **Top models**: top 5 models by cost.
+- **Current session**: stats for this pi session only.
 
-`/auto-model usage clear` reinicia el contador.
+`/auto-model usage clear` resets all usage counters.
 
-### 💸 Presupuesto (budget cap)
+### 💸 Budget Cap
 
-Guardarraíl financiero sobre los datos de uso: cuando el coste de la **sesión** o
-del **día** supera el límite configurado, el routing se **techa en `capTier`**
-(nivel de capacidad máximo permitido). Es un guardarraíl duro: aplica también a
-tiers forzados con `@@tier`.
+Financial guardrail on usage data: when the **session** or **daily** cost exceeds the configured limit, routing is **capped at `capTier`** (the maximum capacity tier allowed). This is a hard guardrail: it also applies to tiers forced with `@@tier`.
 
 ```json
 "budget": {
@@ -174,114 +163,74 @@ tiers forzados con `@@tier`.
 }
 ```
 
-`0` en un límite = deshabilitado. El contador diario se persiste en
-`~/.pi/agent/auto-model-budget.json`. Al superarse, notifica una vez
-(`💸 Presupuesto de sesión superado — techo en [workhorses]`) y el estado se
-refleja en `/auto-model usage`.
+Setting a limit to `0` disables it. The daily tracker is persisted in `~/.pi/agent/auto-model-budget.json`. When a threshold is exceeded, it notifies once (`💸 Session budget exceeded — capped at [workhorses]`) and status is reflected in `/auto-model usage`.
 
-### 📌 Pin de modelo
+### 📌 Model Pinning
 
-`/auto-model pin <provider/model>` fija un modelo concreto y **bloquea el router**
-hasta `/auto-model unpin`: ni el scoring, ni `@@tier`, ni el presupuesto cambian de
-modelo mientras esté activo (el pin es prioridad máxima). Útil para sesiones donde
-quieres control total (p.ej. debugging con un modelo específico). El pin es por
-sesión (se resetea al reiniciar pi) y el status bar muestra `📌`.
+`/auto-model pin <provider/model>` locks a specific model and **bypasses the router** until `/auto-model unpin`: neither scoring, `@@tier`, nor budgets will switch the model while pinned (pinning has the absolute highest precedence). Useful for sessions where you want total manual control (e.g. debugging with a specific model). Pins are session-scoped (reset on pi restart) and the status bar displays `📌`.
 
-**Precedencia de decisión**: `pin` (manual, gana a todo) → `presupuesto` (guardarraíl
-financiero) → `@@tier` (fuerza nivel) → scoring automático.
+**Precedence hierarchy**: `pin` (manual, overrides everything) → `budget` (financial guardrail) → `@@tier` (manual force) → automatic scoring.
 
-### 🎯 Harness de evaluación (corpus etiquetado)
+### 🎯 Evaluation Harness (labeled corpus)
 
-`eval-score.mjs` ejecuta el pipeline estático del classifier (`classifyPrompt`,
-determinista: sin salud/presupuesto/histéresis) sobre `eval-corpus.json` y reporta
-**accuracy exacta, banda ±1, precision/recall por tier y matriz de confusión**.
+`eval-score.mjs` runs the static pipeline of the classifier (`classifyPrompt`, deterministic: no health/budget/hysteresis) over `eval-corpus.json` and reports **exact accuracy, ±1 band accuracy, precision/recall per tier, and confusion matrix**.
 
 ```
-node --experimental-strip-types extensions/auto-model-router/eval-score.mjs
+node --experimental-strip-types eval-score.mjs
 ```
 
-El corpus tiene dos secciones:
+The corpus has two sections:
 
-- **`regression`**: comportamiento actual considerado correcto → **gate de CI**
-  (salida no-cero si exacta < `EVAL_ACCURACY_MIN` (0.9) o banda < `EVAL_BAND_MIN` (0.95)).
-- **`aspirational`**: casos donde el classifier **bajo-tira** (tareas pesadas con los
-  pesos actuales) → se reportan como gaps documentados sin romper CI — son los
-  candidatos a calibración (#9).
+- **`regression`**: current behavior considered correct → **CI gate** (non-zero exit if exact < `EVAL_ACCURACY_MIN` (0.9) or band < `EVAL_BAND_MIN` (0.95)).
+- **`aspirational`**: cases where the classifier **under-scores** (heavy tasks with current weights) → reported as documented gaps without breaking CI — these are candidates for future calibration (#9).
 
-El CI (`auto-model-router.yml`) ejecuta smoke + eval en cada PR que toque la
-extensión, así un cambio de pesos/umbrales/regex que altere decisiones queda
-detectado (y los gaps aspirational se cierran cuando la calibración los resuelve).
+CI (`auto-model-router.yml`) runs smoke + eval on every PR touching the extension, so any changes to weights/thresholds/regexes that alter decisions are caught (and aspirational gaps can be closed when calibration resolves them).
 
-### 🧮 Bucle de calibración (señales implícitas)
+### 🧮 Calibration Loop (implicit feedback)
 
-Cada corrección tuya es una señal de calibración, registrada en
-`~/.pi/agent/auto-model-calibration.jsonl` (JSONL, últimas 1000):
+Every correction you make is a calibration signal, logged in `~/.pi/agent/auto-model-calibration.jsonl` (JSONL, last 1000 lines):
 
-- **`@@tier`** forzado → `override`: el nivel natural que el router habría elegido
-  vs. el que pediste, con score y señal dominante.
-- **`!!`** → `bypass`: el prompt donde saltaste el routing (y el tier natural).
+- Forced **`@@tier`** → `override`: the natural tier the router would have chosen vs. the one you requested, with score and dominant signal.
+- **`!!`** → `bypass`: the prompt where you bypassed the router (and its natural tier).
 
-`/auto-model calibrate` analiza esas señales y **sugiere** (sin aplicar):
+`/auto-model calibrate` analyzes these signals and **suggests** adjustments (without applying them):
 
-- Bajo-tiros (pediste más capacidad que el router) y sobre-tiros por señal dominante.
-- **Deltas de peso** por señal (`code: 0.25 → 0.28`): más bajo-tiros que sobre-tiros
-  en una señal → sube su peso (Δ ±0.01 por muestra, tope ±0.06).
-- **Hints de frontera**: si forzaste `sota` con scores muy por debajo del threshold
-  (0.66), el umbral puede estar alto.
+- Under-scores (you requested higher capacity than routed) and over-scores per dominant signal.
+- **Weight deltas** per signal (`code: 0.25 → 0.28`): more under-scores than over-scores in a signal → increase its weight (Δ ±0.01 per sample, capped at ±0.06).
+- **Boundary hints**: if you forced `sota` with scores way below the threshold (0.66), the sota threshold might be too high.
 
-Ejemplo:
+Example:
 ```
-🧮 Calibración — 12 señales (9 overrides · 3 bypass)
-  Bajo-tiros: 6 · Sobre-tiros: 3
-  💻 code: ↓5 ↑1 → sugiere +0.04
-  🚨 criticality: ↓1 ↑2 → sugiere -0.01
-  ⚠️ 4 subida(s) forzada(s) a sota (score medio 0.44) — threshold de sota (0.66) puede estar alto
+🧮 Calibration — 12 signals (9 overrides · 3 bypass)
+  Under-scores: 6 · Over-scores: 3
+  💻 code: ↓5 ↑1 → suggests +0.04
+  🚨 criticality: ↓1 ↑2 → suggests -0.01
+  ⚠️ 4 forced upgrades to sota (mean score 0.44) — sota threshold (0.66) might be too high
 ```
 
-Aplica los Δ copiándolos a `scoring.weights` en tu `auto-model.json` (o `.pi/` del
-proyecto) y valida con el harness de evaluación (`eval-score.mjs`) — los cambios
-que rompan la regression se detectan en CI. `/auto-model calibrate clear` reinicia
-el historial.
+Apply the deltas by copying them to `scoring.weights` in your `auto-model.json` (or project `.pi/` config) and validate with the evaluation harness (`eval-score.mjs`) — changes that break regression are caught in CI. `/auto-model calibrate clear` resets the calibration logs.
 
-### 🧲 Histéresis anti-flip-flop
+### 🧲 Anti-Flip-Flop Hysteresis
 
-Evita que el router oscile entre tiers en turnos consecutivos (prompt duro → sota,
-prompt trivial → lightweights, vuelta a sota…): para **bajar** de tier, el tier
-actual debe haberse mantenido al menos `hysteresis.minDowngradeTurns` turnos
-rutados; las **subidas son siempre inmediatas** (una tarea dura merece el modelo
-fuerte ya). Al bloquearse una bajada, la notificación lo indica
-(`🧲 histéresis (bajada bloqueada 1/2)`). `0` deshabilita; el ancla actual aparece
-en `/auto-model debug`.
+Prevents the router from oscillating between tiers on consecutive turns (e.g. tough prompt → sota, trivial prompt → lightweights, back to sota…): to **downgrade** a tier, the current tier must have been held for at least `hysteresis.minDowngradeTurns` routed turns; **upgrades are always immediate** (tough tasks deserve the strong model right away). When a downgrade is blocked, the notification indicates it (`🧲 hysteresis (downgrade blocked 1/2)`). `0` disables it; the current anchor is shown in `/auto-model debug`.
 
-### 🚑 Rescate a mitad de turno
+### 🚑 Mid-Turn Rescue (failover)
 
-Si el modelo elegido falla con un error recuperable (auth/429/5xx/timeout/modelo
-no disponible), el router **degrada al provider** (salud) y **reintenta el mismo
-prompt con el siguiente candidato del tier** (sano y habilitado). Máximo 2 rescates
-por prompt de usuario real; el reintento no vuelve al modelo fallido porque ya está
-degradado. Los errores de contexto (`context_length_exceeded`) NO disparan rescate
-(pi los resuelve con compactación). No aplica con `pin` activo ni en turnos con
-`!!`. El contador de rescates aparece en `/auto-model debug`.
+If the selected model fails with a recoverable error (auth/429/5xx/timeout/model not available), the router **degrades the provider** (health) and **retries the exact same prompt with the next candidate in the tier** (healthy and enabled). Max 2 rescues per actual user prompt; the retry won't hit the failed model again because it is now degraded. Context errors (`context_length_exceeded`) do NOT trigger a rescue (pi resolves them with compaction). Does not apply when `pin` is active or during `!!` turns. The rescue count is shown in `/auto-model debug`.
 
-### 🗂️ Config por proyecto
+### 🗂️ Project-level Config
 
-Además de la config global (`~/.pi/agent/auto-model.json`), cada proyecto puede
-llevar su propia config en **`.pi/auto-model.json`** (se carga solo en proyectos de
-confianza). La config efectiva es:
+In addition to the global config (`~/.pi/agent/auto-model.json`), each project can have its own config in **`.pi/auto-model.json`** (loaded only in trusted projects). The effective configuration is:
 
 ```
-defaults embebidos → global (~/.pi/agent) → proyecto (./.pi)
+embedded defaults → global (~/.pi/agent) → project (./.pi)
 ```
 
-El merge es profundo por clave: el proyecto solo sobreescribe lo que defina, el
-resto cae a la global y a los defaults. Útil para tu ecosistema multirepo —
-un dominio conservador puede pinar providers/tiers sin tocar la config global.
-`/auto-model config` muestra ambas rutas y si la de proyecto está activa.
+The merge is deep per key: the project only overrides what it defines, falling back to global and defaults for everything else. Useful for your multi-repo ecosystem — a conservative domain can pin specific providers/tiers without touching the global config. `/auto-model config` displays both paths and whether the project config is active.
 
-## Configuración
+## Configuration
 
-`~/.pi/agent/auto-model.json` (opcional). Ver `config.example.json` de este
-directorio. La configuración se recarga en `session_start` y con `/auto-model reload`.
+`~/.pi/agent/auto-model.json` (optional). See `config.example.json` in this directory. The configuration is reloaded on `session_start` and via `/auto-model reload`.
 
 ```json
 {
@@ -297,70 +246,7 @@ directorio. La configuración se recarga en `session_start` y con `/auto-model r
     ]
   },
   "tierProviderPriorities": {
-    "sota+": { "anthropic": 1, "google": 2 },
-    "workhorses+": { "google": 1 }
-  },
-  "scoring": {
-    "weights": {
-      "structure": 0.15, "context": 0.18, "code": 0.22,
-      "agentic": 0.15, "criticality": 0.2, "output": 0.1
-    },
-    "thresholds": {
-      "sota+": 0.82, "sota": 0.66, "workhorses+": 0.5,
-      "workhorses": 0.36, "lightweights+": 0.2, "lightweights": 0
-    }
+    "sota+": { "anthropic": 1, "google": 2 }
   }
 }
 ```
-
-> **Nota de modelo:** el campo `thinking` fija el nivel de thinking al seleccionar
-> ese modelo. Los niveles no soportados por el modelo se clampan automáticamente.
->
-> **`tierProviderPriorities`** (opcional): prioridades de provider **específicas
-> por nivel**. Sobrescriben la `priority` general SOLO para ese tier; los
-> providers no listados en el mapa de un tier usan su priority general; los tiers
-> sin mapa usan la general para todos. Cuando un tier tiene mapa explícito, esa
-> prioridad manda sobre la afinidad de provider (la afinidad solo desempata).
-> Ejemplo: en `sota+` priorizar anthropic y en `workhorses+` priorizar google.
-
-## Instalación
-
-La extensión vive en `core-agent-library/extensions/auto-model-router/` y se
-despliega como symlink a `~/.pi/agent/extensions/` mediante
-`scripts/setup.sh` (deploy automático de extensiones gestionadas).
-
-## Releases automatizadas (Release Please)
-
-Los releases se gestionan automáticamente con
-[Release Please](https://github.com/googleapis/release-please) mediante el
-workflow `.github/workflows/release.yml`. Al hacer push a `main`, Release
-Please analiza los commits y:
-
-- Abre (o actualiza) un **PR de release** con el bump de versión en
-  `package.json` y `.release-please-manifest.json`, un `CHANGELOG.md`
-  generado y las notas del release. También abre PRs separados para
-  dependencias si existen (`chore(deps)`).
-- Al **mergear el PR de release**, crea el tag `vX.Y.Z` y el **GitHub
-  Release** correspondiente.
-
-Para que esto funcione, los commits en `main` deben seguir
-[Conventional Commits](https://www.conventionalcommits.org/) (el repositorio
-usa merge/squash de PRs):
-
-| Tipo de commit        | Efecto en la versión                     |
-|-----------------------|------------------------------------------|
-| `feat: ...`           | bump **minor** (`0.1.0` → `0.2.0`)       |
-| `fix: ...`            | bump **patch** (`0.1.0` → `0.1.1`)       |
-| `feat!:` / `BREAKING CHANGE` | bump **major** (`0.1.0` → `1.0.0`) |
-| `chore:`, `docs:`, `refactor:`, `test:`, etc. | sin release |
-
-Reglas prácticas:
-
-- El asunto del commit debe tener el formato `tipo(alcance): descripción`
-  (p. ej. `feat(scoring): añade señal de output`).
-- Para un cambio que rompe compatibilidad, añade `!` tras el tipo o un pie
-  con `BREAKING CHANGE: descripción`.
-- Prefiere **squash merge** para que el PR de release vea un único commit
-  con el tipo correcto.
-- El PR de release es de Release Please: no lo edites a mano; solo
-  revísalo y mergealo.

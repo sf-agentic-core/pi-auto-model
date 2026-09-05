@@ -1,6 +1,5 @@
-// Smoke test del scoring del Auto Model Router.
-// Uso: node --experimental-strip-types extensions/auto-model-router/test-score.mjs
-// (o desde el repo: node --experimental-strip-types extensions/auto-model-router/score-smoke.mjs)
+// Smoke test of the Auto Model Router scoring.
+// Usage: node --experimental-strip-types score-smoke.mjs
 import { __test } from "./index.ts";
 
 const {
@@ -16,7 +15,7 @@ const {
 let pass = 0;
 let fail = 0;
 
-// --- Test 0: bypass en procesos subagent -----------------------------------
+// --- Test 0: bypass in subagent processes -----------------------------------
 {
   const cases = [
     [{}, false],
@@ -36,7 +35,7 @@ const ctxStub = {
   model: undefined,
   modelRegistry: {
     find(p, id) {
-      // Fingimos que todos los modelos del catálogo existen
+      // Fake that all models from the catalog exist
       const known = new Set();
       for (const tier of TIER_ORDER) {
         for (const e of DEFAULT_CONFIG.tiers[tier]) known.add(`${e.provider}/${e.model}`);
@@ -44,7 +43,7 @@ const ctxStub = {
       return known.has(`${p}/${id}`) ? { provider: p, id, name: id } : undefined;
     },
     getAvailable() {
-      // Todos los modelos del catálogo tienen auth en el stub
+      // All catalog models have auth in the stub
       const out = [];
       for (const tier of TIER_ORDER) {
         for (const e of DEFAULT_CONFIG.tiers[tier]) {
@@ -125,9 +124,9 @@ for (const c of cases) {
   );
 }
 
-// --- Test 2: filtrado por providers habilitados ----------------------------
-// SOTA+ con anthropic deshabilitado → cae en github-copilot/gpt-5.6-sol
-// (priority 1 del mapa específico de sota+).
+// --- Test 2: filter by enabled providers ----------------------------
+// SOTA+ with anthropic disabled → falls back to github-copilot/gpt-5.6-sol
+// (priority 1 from the specific map of sota+).
 {
   const cfg = structuredClone(DEFAULT_CONFIG);
   cfg.providers.anthropic.enabled = false;
@@ -142,9 +141,9 @@ for (const c of cases) {
   );
 }
 
-// --- Test 3: afinidad de provider (continuidad) ----------------------------
-// Si el modelo actual es de google y google está en el tier, se prefiere google
-// aunque anthropic tenga mayor prioridad.
+// --- Test 3: provider affinity (continuity) ----------------------------
+// If the current model is from google and google is in the tier, prefer google
+// even if anthropic has higher priority.
 {
   ctxStub.model = { provider: "google", id: "gemini-2.5-pro", name: "gemini-2.5-pro" };
   const picked = pickModel(DEFAULT_CONFIG, "workhorses+", ctxStub);
@@ -156,10 +155,9 @@ for (const c of cases) {
   ctxStub.model = undefined;
 }
 
-// --- Test 4: prioridad de provider específica por tier -----------------------
-// En sota+ se prioriza google (priority 1) sobre anthropic (priority 2), a pesar
-// de que el modelo actual es anthropic (la afinidad NO debe ganar a una
-// prioridad explícita del tier).
+// --- Test 4: tier-specific provider priority -----------------------
+// In sota+, google is prioritized (priority 1) over anthropic (priority 2), despite
+// current model being anthropic (affinity must NOT override an explicit tier priority).
 {
   const cfg = structuredClone(DEFAULT_CONFIG);
   cfg.tierProviderPriorities = {
@@ -176,8 +174,8 @@ for (const c of cases) {
   ctxStub.model = undefined;
 }
 
-// --- Test 5: override parcial + fallback a la priority general -----------------
-// workhorses+ prioriza google sobre el resto del tier (anthropic baja a 2).
+// --- Test 5: partial override + fallback to general priority -----------------
+// workhorses+ prioritizes google over the rest of the tier (anthropic falls back to 2).
 {
   const cfg = structuredClone(DEFAULT_CONFIG);
   cfg.tierProviderPriorities = {
@@ -191,8 +189,8 @@ for (const c of cases) {
   );
 }
 
-// --- Test 6: tier sin mapa específico → usa la priority general ----------------
-// sota sin mapa: general github-copilot=1 → gpt-5.6-terra, no google.
+// --- Test 6: tier without specific map → use general priority ----------------
+// sota without map: general github-copilot=1 → gpt-5.6-terra, not google.
 {
   const cfg = structuredClone(DEFAULT_CONFIG);
   cfg.tierProviderPriorities = { "workhorses+": { google: 1 } }; // sota NO está en el mapa
@@ -204,9 +202,9 @@ for (const c of cases) {
   );
 }
 
-// --- Test 7: arranque en frío (sin historial) → sin afinidad -------------------
-// Primer turno: aunque el modelo actual sea google, la priority general manda
-// (github-copilot=1) → gpt-5.3-codex, no gemini-2.5-pro.
+// --- Test 7: cold start (no history) → no affinity -------------------
+// First turn: even if the current model is google, general priority rules
+// (github-copilot=1) → gpt-5.3-codex, not gemini-2.5-pro.
 {
   ctxStub.model = { provider: "google", id: "gemini-2.5-pro", name: "gemini-2.5-pro" };
   const picked = pickModel(DEFAULT_CONFIG, "workhorses+", ctxStub, false);
@@ -233,7 +231,7 @@ for (const c of cases) {
   console.log(`${ok ? "✅" : "❌"} hasAssistantHistory: sin assistant → false, con assistant → true`);
 }
 
-// --- Test 9: classifyError (salud de providers) ---------------------------------
+// --- Test 9: classifyError (provider health) ---------------------------------
 {
   const cases = [
     ["429 Too Many Requests", "rate-limit"],
@@ -258,7 +256,7 @@ for (const c of cases) {
   console.log(`${ok ? "✅" : "❌"} classifyError: 9 casos (auth/rate-limit/server/network/context/empty)`);
 }
 
-// --- Test 10: filtrado por salud + cooldown -------------------------------------
+// --- Test 10: filtering by health + cooldown -------------------------------------
 {
   const now = Date.now();
   const health = {
@@ -284,7 +282,7 @@ for (const c of cases) {
   );
 }
 
-// --- Test 11: señal dominante ---------------------------------------------------
+// --- Test 11: dominant signal ---------------------------------------------------
 {
   const sCrit = computeSignals(
     "cambia el puerto del servicio en producción y haz deploy, sin backup",
@@ -308,7 +306,7 @@ for (const c of cases) {
   const ok = dCrit === "criticality" && dCode === "code";
   ok ? pass++ : fail++;
   console.log(
-    `${ok ? "✅" : "❌"} dominantSignal: crítico→${dCrit}, código→${dCode} (esperado criticality/code)`,
+    `${ok ? "✅" : "❌"} dominantSignal: critical→${dCrit}, code→${dCode} (expected criticality/code)`,
   );
 }
 
@@ -335,45 +333,45 @@ for (const c of cases) {
   const ok1 =
     u.calls === 2 && u.inputTokens === 300 && u.outputTokens === 150 && u.totalTokens === 465 && Math.abs(u.cost - 0.03) < 1e-9;
   ok1 ? pass++ : fail++;
-  console.log(`${ok1 ? "✅" : "❌"} aggregateUsage: 2 llamadas acumuladas correctamente`);
+  console.log(`${ok1 ? "✅" : "❌"} aggregateUsage: 2 calls accumulated correctly`);
 
   const t1 = __test.tierForModel(DEFAULT_CONFIG, "github-copilot", "gpt-5.6-terra");
   const t2 = __test.tierForModel(DEFAULT_CONFIG, "google", "no-existe");
   const ok2 = t1 === "sota" && t2 === "unknown";
   ok2 ? pass++ : fail++;
-  console.log(`${ok2 ? "✅" : "❌"} tierForModel: gpt-5.6-terra→sota, desconocido→unknown`);
+  console.log(`${ok2 ? "✅" : "❌"} tierForModel: gpt-5.6-terra→sota, unknown→unknown`);
 }
 
-// --- Test 13: techo de presupuesto -------------------------------------------------
+// --- Test 13: budget cap -------------------------------------------------
 {
   const cfg = structuredClone(DEFAULT_CONFIG);
   cfg.budget = { maxCostPerSession: 0.5, maxCostPerDay: 2.0, capTier: "workhorses" };
 
-  // Bajo presupuesto → sin cambios
+  // Under budget → no changes
   const ok1 = __test.clampTierToBudget("sota", cfg, 0.1, 0.5);
   const pass1 = ok1.tier === "sota" && !ok1.over && !ok1.clamped;
   pass1 ? pass++ : fail++;
-  console.log(`${pass1 ? "✅" : "❌"} budget: bajo límite → sin clamp (${ok1.tier})`);
+  console.log(`${pass1 ? "✅" : "❌"} budget: under limit → no clamp (${ok1.tier})`);
 
-  // Sesión superada → sota baja a workhorses
+  // Session exceeded → sota downgraded to workhorses
   const ok2 = __test.clampTierToBudget("sota", cfg, 0.6, 0.5);
   const pass2 = ok2.tier === "workhorses" && ok2.over && ok2.clamped && ok2.reason === "session";
   pass2 ? pass++ : fail++;
-  console.log(`${pass2 ? "✅" : "❌"} budget: sesión superada → sota→workhorses (${ok2.tier})`);
+  console.log(`${pass2 ? "✅" : "❌"} budget: session exceeded → sota→workhorses (${ok2.tier})`);
 
-  // Ya por debajo del techo → sin clamp pero over=true
+  // Already below the cap → no clamp but over=true
   const ok3 = __test.clampTierToBudget("lightweights", cfg, 0.6, 0.5);
   const pass3 = ok3.tier === "lightweights" && ok3.over && !ok3.clamped;
   pass3 ? pass++ : fail++;
-  console.log(`${pass3 ? "✅" : "❌"} budget: ya bajo techo → sin clamp (${ok3.tier})`);
+  console.log(`${pass3 ? "✅" : "❌"} budget: already below cap → no clamp (${ok3.tier})`);
 
-  // Deshabilitado (0) → nunca aplica
+  // Disabled (0) → never applies
   const cfgOff = structuredClone(DEFAULT_CONFIG);
   cfgOff.budget = { maxCostPerSession: 0, maxCostPerDay: 0, capTier: "workhorses" };
   const ok4 = __test.clampTierToBudget("sota", cfgOff, 99, 99);
   const pass4 = ok4.tier === "sota" && !ok4.over;
   pass4 ? pass++ : fail++;
-  console.log(`${pass4 ? "✅" : "❌"} budget: deshabilitado → sin clamp (${ok4.tier})`);
+  console.log(`${pass4 ? "✅" : "❌"} budget: disabled → no clamp (${ok4.tier})`);
 }
 
 // --- Test 14: parsePinSpec --------------------------------------------------------
@@ -388,7 +386,7 @@ for (const c of cases) {
     __test.parsePinSpec("provider/") === null &&
     __test.parsePinSpec("") === null;
   ok ? pass++ : fail++;
-  console.log(`${ok ? "✅" : "❌"} parsePinSpec: formatos válidos e inválidos`);
+  console.log(`${ok ? "✅" : "❌"} parsePinSpec: valid and invalid formats`);
 }
 
 // --- Test 15: mergeConfigs (proyecto > global > defaults) -------------------------
@@ -416,7 +414,7 @@ for (const c of cases) {
     cfg.budget.capTier === "workhorses" && // default intacto
     cfg.tierProviderPriorities.sota !== undefined; // default intacto
   ok ? pass++ : fail++;
-  console.log(`${ok ? "✅" : "❌"} mergeConfigs: proyecto > global > defaults`);
+  console.log(`${ok ? "✅" : "❌"} mergeConfigs: project > global > defaults`);
 }
 
 // --- Test 16: nextRescueCandidate ------------------------------------------------
@@ -434,7 +432,7 @@ for (const c of cases) {
     __test.nextRescueCandidate(candidates, "a/m1", () => true, (p) => p !== "b")?.model === "m3" && // b deshabilitado → salta
     __test.nextRescueCandidate(candidates, "zz/zz", () => true, () => true) === undefined;
   ok ? pass++ : fail++;
-  console.log(`${ok ? "✅" : "❌"} nextRescueCandidate: siguiente sano/habilitado tras el fallido`);
+  console.log(`${ok ? "✅" : "❌"} nextRescueCandidate: next healthy/enabled candidate after failure`);
 }
 
 // --- Test 17: histéresis anti-flip-flop -------------------------------------------
@@ -454,7 +452,7 @@ for (const c of cases) {
     // min=0 → deshabilitado
     !H("lightweights", "sota", 0, 0).blocked;
   ok ? pass++ : fail++;
-  console.log(`${ok ? "✅" : "❌"} hysteresisTier: bloquea bajadas prematuras, subidas inmediatas`);
+  console.log(`${ok ? "✅" : "❌"} hysteresisTier: blocks premature downgrades, allows immediate upgrades`);
 }
 
 // --- Test 18: analyzeCalibration ---------------------------------------------------
@@ -490,7 +488,7 @@ for (const c of cases) {
     Math.abs(r.weightSuggestions.find((w) => w.signal === "criticality").delta + 0.01) < 1e-9 &&
     r.boundaryHints.length === 2; // sota:workhorses (0.41<0.66) y workhorses:lightweights+ (0.3<0.36)
   ok ? pass++ : fail++;
-  console.log(`${ok ? "✅" : "❌"} analyzeCalibration: bajo/sobre-tiros por señal + sugerencias de peso`);
+  console.log(`${ok ? "✅" : "❌"} analyzeCalibration: under/over-scores per signal + weight suggestions`);
 }
 
 console.log(`\n${pass} OK, ${fail} FAIL`);
