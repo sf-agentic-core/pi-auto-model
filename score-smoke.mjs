@@ -491,5 +491,44 @@ for (const c of cases) {
   console.log(`${ok ? "✅" : "❌"} analyzeCalibration: under/over-scores per signal + weight suggestions`);
 }
 
+// --- Test 19: httpStatusReason (HTTP → health category) ----------------------
+{
+  const H = __test.httpStatusReason;
+  const ok =
+    H(429) === "rate-limit" &&
+    H(200) === null &&
+    H(undefined) === null &&
+    H(400) === null &&
+    H(401) === "auth" &&
+    H(403) === "auth" &&
+    H(500) === "server" &&
+    H(503) === "server" &&
+    H(599) === "server" &&
+    H(600) === null;
+  ok ? pass++ : fail++;
+  console.log(`${ok ? "✅" : "❌"} httpStatusReason: 429→rate-limit, 4xx auth, 5xx server, ok→null`);
+}
+
+// --- Test 20: rescue skips the WHOLE failed provider --------------------------
+// A provider-wide quota outage must not re-try sibling models of the same
+// provider: with several github-copilot models stacked before deepseek, a
+// github-copilot failure should jump straight to deepseek.
+{
+  const candidates = [
+    { provider: "github-copilot", model: "gpt-5.6-terra", thinking: "high" },
+    { provider: "github-copilot", model: "gpt-5.3-codex", thinking: "medium" },
+    { provider: "github-copilot", model: "gpt-5.6-sol", thinking: "max" },
+    { provider: "deepseek", model: "deepseek-v4-pro", thinking: "high" },
+    { provider: "google", model: "gemini-3.5-flash", thinking: "medium" },
+  ];
+  const ok =
+    __test.nextRescueCandidate(candidates, "github-copilot/gpt-5.6-terra", () => true, () => true, ["github-copilot"])?.model ===
+      "deepseek-v4-pro" && // skips ALL github-copilot models → next real provider
+    __test.nextRescueCandidate(candidates, "deepseek/deepseek-v4-pro", () => true, () => true, ["deepseek"])?.model ===
+      "gemini-3.5-flash";
+  ok ? pass++ : fail++;
+  console.log(`${ok ? "✅" : "❌"} rescue rotation: failed provider skipped wholesale → jumps to next provider`);
+}
+
 console.log(`\n${pass} OK, ${fail} FAIL`);
 process.exit(fail ? 1 : 0);
